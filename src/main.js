@@ -11,7 +11,7 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.5</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.6</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
@@ -63,6 +63,7 @@ let cleanupBuffer = null;
 let alphaBuffer = null;
 let morphologyRow = null;
 let morphologyOutput = null;
+let morphologyQueue = null;
 const SETTINGS_KEY = 'camlayer.settings.v2';
 const DEFAULT_SETTINGS = Object.freeze({ camera: '', quality: '640', threshold: 0.35, softness: 0.28, cleanup: 0.30, stability: 0.50, stabilize: true, checker: true });
 let starting = false;
@@ -181,6 +182,7 @@ function updateMask(mask, width, height) {
     alphaBuffer = new Float32Array(size);
     morphologyRow = new Float32Array(size);
     morphologyOutput = new Float32Array(size);
+    morphologyQueue = new Int32Array(Math.max(width, height));
   }
 
   const threshold = Number(thresholdInput.value);
@@ -260,9 +262,9 @@ function updateMask(mask, width, height) {
     alphaBuffer[i] = t * t * (3 - 2 * t);
   }
 
-  // A positive setting dilates (max filter); a negative setting erodes
-  // (min filter). Work at model resolution, scaling radius to output pixels.
-  // A separable rectangular footprint keeps the per-frame cost manageable.
+  // Morphological expansion/contraction uses a monotonic sliding-window
+  // deque. Unlike nested radius loops, complexity stays linear in mask size.
+  // Boundary windows are clipped to valid pixels (no out-of-frame samples).
   const outputWidth = output.width || width;
   const desiredNativeRadius = Math.abs(signedSoftness) * 12 * width / outputWidth;
   const radius = Math.min(8, Math.ceil(desiredNativeRadius));
@@ -270,28 +272,51 @@ function updateMask(mask, width, height) {
   let finalAlpha = alphaBuffer;
   if (radius > 0 && strength > 0) {
     const expand = signedSoftness > 0;
+    const queue = morphologyQueue;
+
+    // Horizontal min/max sliding windows.
     for (let y = 0; y < height; y++) {
       const row = y * width;
+      let head = 0;
+      let tail = 0;
+      let next = 0;
       for (let x = 0; x < width; x++) {
-        let extremum = alphaBuffer[row + x];
-        for (let dx = -radius; dx <= radius; dx++) {
-          const xx = Math.max(0, Math.min(width - 1, x + dx));
-          const value = alphaBuffer[row + xx];
-          extremum = expand ? Math.max(extremum, value) : Math.min(extremum, value);
+        const right = Math.min(width - 1, x + radius);
+        while (next <= right) {
+          const value = alphaBuffer[row + next];
+          while (tail > head) {
+            const previous = alphaBuffer[row + queue[tail - 1]];
+            if (expand ? previous > value : previous < value) break;
+            tail--;
+          }
+          queue[tail++] = next++;
         }
-        morphologyRow[row + x] = extremum;
+        const left = x - radius;
+        while (head < tail && queue[head] < left) head++;
+        morphologyRow[row + x] = alphaBuffer[row + queue[head]];
       }
     }
-    for (let y = 0; y < height; y++) {
-      const row = y * width;
-      for (let x = 0; x < width; x++) {
-        let extremum = morphologyRow[row + x];
-        for (let dy = -radius; dy <= radius; dy++) {
-          const yy = Math.max(0, Math.min(height - 1, y + dy));
-          const value = morphologyRow[yy * width + x];
-          extremum = expand ? Math.max(extremum, value) : Math.min(extremum, value);
+
+    // Vertical sliding windows over the horizontal result.
+    for (let x = 0; x < width; x++) {
+      let head = 0;
+      let tail = 0;
+      let next = 0;
+      for (let y = 0; y < height; y++) {
+        const bottom = Math.min(height - 1, y + radius);
+        while (next <= bottom) {
+          const value = morphologyRow[next * width + x];
+          while (tail > head) {
+            const previous = morphologyRow[queue[tail - 1] * width + x];
+            if (expand ? previous > value : previous < value) break;
+            tail--;
+          }
+          queue[tail++] = next++;
         }
-        const index = row + x;
+        const top = y - radius;
+        while (head < tail && queue[head] < top) head++;
+        const index = y * width + x;
+        const extremum = morphologyRow[queue[head] * width + x];
         morphologyOutput[index] = alphaBuffer[index] * (1 - strength) + extremum * strength;
       }
     }
@@ -389,6 +414,7 @@ async function start() {
     alphaBuffer = null;
     morphologyRow = null;
     morphologyOutput = null;
+    morphologyQueue = null;
     averageFps = 0;
     lastFrameTime = 0;
     lastVideoTime = -1;
@@ -424,6 +450,7 @@ function stop() {
   alphaBuffer = null;
   morphologyRow = null;
   morphologyOutput = null;
+  morphologyQueue = null;
   element('fps').textContent = '—';
   element('latency').textContent = '—';
   element('dimensions').textContent = '—';
