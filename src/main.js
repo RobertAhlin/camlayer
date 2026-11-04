@@ -11,7 +11,7 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.4</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.5</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
@@ -60,6 +60,9 @@ let averageFps = 0;
 let previousMask = null;
 let spatialBuffer = null;
 let cleanupBuffer = null;
+let alphaBuffer = null;
+let morphologyRow = null;
+let morphologyOutput = null;
 const SETTINGS_KEY = 'camlayer.settings.v2';
 const DEFAULT_SETTINGS = Object.freeze({ camera: '', quality: '640', threshold: 0.35, softness: 0.28, cleanup: 0.30, stability: 0.50, stabilize: true, checker: true });
 let starting = false;
@@ -175,6 +178,9 @@ function updateMask(mask, width, height) {
     previousMask = new Float32Array(mask);
     spatialBuffer = new Float32Array(size);
     cleanupBuffer = new Float32Array(size);
+    alphaBuffer = new Float32Array(size);
+    morphologyRow = new Float32Array(size);
+    morphologyOutput = new Float32Array(size);
   }
 
   const threshold = Number(thresholdInput.value);
@@ -244,22 +250,60 @@ function updateMask(mask, width, height) {
     values = cleanupBuffer;
   }
 
-  // Signed softness shifts the effective mask cutoff in opposite directions.
-  // Positive values retain more of the outer edge; negative values
-  // contract the edge inward. Both directions use the same feather radius.
+  // Convert confidence to alpha once. Edge softness will change the
+  // geometry of this alpha mask instead of approximating it with a threshold.
   const signedSoftness = Number(softnessInput.value);
-  const offset = signedSoftness * 0.035;
-  const center = Math.min(0.95, Math.max(0.05, threshold - offset));
   const transition = 0.15;
-  const low = center - transition / 2;
+  const low = threshold - transition / 2;
   for (let i = 0; i < size; i++) {
     const t = Math.max(0, Math.min(1, (values[i] - low) / transition));
-    const alpha = t * t * (3 - 2 * t);
+    alphaBuffer[i] = t * t * (3 - 2 * t);
+  }
+
+  // A positive setting dilates (max filter); a negative setting erodes
+  // (min filter). Work at model resolution, scaling radius to output pixels.
+  // A separable rectangular footprint keeps the per-frame cost manageable.
+  const outputWidth = output.width || width;
+  const desiredNativeRadius = Math.abs(signedSoftness) * 12 * width / outputWidth;
+  const radius = Math.min(8, Math.ceil(desiredNativeRadius));
+  const strength = Math.min(1, desiredNativeRadius);
+  let finalAlpha = alphaBuffer;
+  if (radius > 0 && strength > 0) {
+    const expand = signedSoftness > 0;
+    for (let y = 0; y < height; y++) {
+      const row = y * width;
+      for (let x = 0; x < width; x++) {
+        let extremum = alphaBuffer[row + x];
+        for (let dx = -radius; dx <= radius; dx++) {
+          const xx = Math.max(0, Math.min(width - 1, x + dx));
+          const value = alphaBuffer[row + xx];
+          extremum = expand ? Math.max(extremum, value) : Math.min(extremum, value);
+        }
+        morphologyRow[row + x] = extremum;
+      }
+    }
+    for (let y = 0; y < height; y++) {
+      const row = y * width;
+      for (let x = 0; x < width; x++) {
+        let extremum = morphologyRow[row + x];
+        for (let dy = -radius; dy <= radius; dy++) {
+          const yy = Math.max(0, Math.min(height - 1, y + dy));
+          const value = morphologyRow[yy * width + x];
+          extremum = expand ? Math.max(extremum, value) : Math.min(extremum, value);
+        }
+        const index = row + x;
+        morphologyOutput[index] = alphaBuffer[index] * (1 - strength) + extremum * strength;
+      }
+    }
+    finalAlpha = morphologyOutput;
+  }
+
+  for (let i = 0; i < size; i++) {
     const offset = i * 4;
     data.data[offset] = 255;
     data.data[offset + 1] = 255;
     data.data[offset + 2] = 255;
-    data.data[offset + 3] = Math.round(alpha * 255);
+    data.data[offset + 3] = Math.round(finalAlpha[i] * 255);
   }
   maskContext.putImageData(data, 0, 0);
 }
@@ -277,8 +321,7 @@ function renderFrame() {
     updateMask(personMask.getAsFloat32Array(), personMask.width, personMask.height);
     outputContext.globalCompositeOperation = 'source-over';
     outputContext.clearRect(0, 0, output.width, output.height);
-    // Both positive and negative softness feather the mask by the same
-    // radius; the direction comes from the shifted confidence cutoff.
+    // Blur softens the morphologically shifted edge in both directions.
     const featherPixels = Math.abs(Number(softnessInput.value)) * 8;
     outputContext.filter = featherPixels > 0 ? `blur(${featherPixels.toFixed(2)}px)` : 'none';
     outputContext.drawImage(maskCanvas, 0, 0, output.width, output.height);
@@ -343,6 +386,9 @@ async function start() {
     previousMask = null;
     spatialBuffer = null;
     cleanupBuffer = null;
+    alphaBuffer = null;
+    morphologyRow = null;
+    morphologyOutput = null;
     averageFps = 0;
     lastFrameTime = 0;
     lastVideoTime = -1;
@@ -375,6 +421,9 @@ function stop() {
   previousMask = null;
   spatialBuffer = null;
   cleanupBuffer = null;
+  alphaBuffer = null;
+  morphologyRow = null;
+  morphologyOutput = null;
   element('fps').textContent = '—';
   element('latency').textContent = '—';
   element('dimensions').textContent = '—';
