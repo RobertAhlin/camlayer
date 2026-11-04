@@ -2,201 +2,114 @@
 
 **AI Background Removal for OBS Studio**
 
-CamLayer is an experimental project for real-time AI-powered webcam background removal without a green screen. The long-term goal is to produce a clean, stable, transparent video layer that can be used with OBS Studio.
+CamLayer is an experimental, browser-based real-time webcam background removal application. It uses on-device person segmentation to create a video canvas with a transparent background, with eventual integration into OBS Studio as the long-term goal.
 
-Microsoft Teams is our visual quality benchmark. Achieving comparable quality is a goal to test, not a guaranteed property of the initial model.
+**Visual quality reference:** Microsoft Teams. Comparable quality remains a target to evaluate, not a verified claim.
 
-> **Project status:** v0.1 was validated with a real webcam. v0.2 edge-refinement and preferences update committed; live verification is pending.
+**Live demo:** https://camlayer.vercel.app/  
+**Current code version:** v0.2.6  
+**Development status as of November 4, 2026:** Working browser prototype; the newest performance optimization awaits a real-camera retest.
 
-## Project goals
+## Current capabilities
 
-- Segment the person in a live webcam feed.
-- Preserve transparency through an alpha channel for flexible compositing.
-- Prioritize natural edges, temporal stability, low latency, and practical performance.
-- Process camera frames locally on the user's device, without uploading video to a server.
-- Validate the standalone browser experience before deciding how to integrate with OBS Studio.
+- Camera selection and browser permission handling, with start and stop controls.
+- Side-by-side camera and transparent-alpha previews.
+- MediaPipe Tasks Vision person segmentation processed in the browser.
+- Processing profiles of 640 × 360 and 1280 × 720.
+- Adjustable mask threshold (0.15–0.85).
+- Signed Edge softness (−2.00 to +2.00), which erodes the alpha mask inward for negative values or dilates it outward for positive values, then feathers the result.
+- Edge cleanup (0.00–1.00) for spatial confidence-mask smoothing.
+- Edge stability (0.00–2.00) for motion-adaptive temporal smoothing, with an on/off stabilization toggle.
+- Optional checkerboard transparency preview.
+- Processing FPS, approximate inference-and-render time, and output dimensions.
+- Browser-local saved preferences through `localStorage`.
 
-## Version 0.1: initial working MVP
+The effect of Edge cleanup has been difficult to distinguish in informal visual tests; its utility remains open for evaluation.
 
-The first version will be a browser application featuring:
+## What has been verified
 
-- Start and stop controls for camera access, with explicit user permission.
-- Camera enumeration and selection.
-- Side-by-side previews of the original feed and the segmented output.
-- A transparent output canvas and an optional checkerboard preview.
-- Adjustable mask threshold and edge softness.
-- Basic temporal smoothing to reduce mask flicker.
-- Selectable processing resolutions, initially 640 × 360 and 1280 × 720.
-- Processing FPS and approximate per-frame processing time.
-- Clear error handling for unavailable cameras or denied permissions.
+A browser-hosted camera pipeline has worked in live user testing, with working person segmentation and transparent output. Hair, glasses, headphones, shoulders, and fingers were explored at various mask thresholds. Edge stability visibly reduced some contour flicker in user testing, and signed softness provided an inward/outward contour adjustment.
 
-**Definition of done:** A user can open the browser app, enable a camera, move in front of it, and see a person-only output with a transparent background in real time.
+Observed measurements are snapshots, **not benchmarks**:
 
-OBS integration is **out of scope for v0.1**.
+| Test state | Processing FPS | Inference + render | Output |
+| --- | ---: | ---: | --- |
+| Early v0.1 test | 35.1 | 27 ms | 1280 × 720 |
+| Later v0.1 test | 36.4 | 23 ms | 1280 × 720 |
+| v0.2 edge-adjustment test | 25.1 | 38 ms | 1280 × 720 |
+| v0.2.5 morphological processing test | 7.7 | 144 ms | 1280 × 720 |
 
-## Proposed technology stack
+**Important:** v0.2.6 replaces the costly morphological filter with a linear-time sliding-window implementation. It is committed but was **not yet retested** when this status was written. Do not assume the earlier FPS has been recovered.
 
-| Component | Technology |
+See [Development Status](docs/development-status.md) for the exact stopping point and [Test Plan](docs/test-plan.md) for the next checks.
+
+## Technology and deployment
+
+| Component | Current choice |
 | --- | --- |
-| Application | Native JavaScript modules, HTML, and CSS |
-| Initial segmentation engine | MediaPipe Tasks Vision |
-| Compositing | Canvas 2D or WebGL |
-| Source control | GitHub |
-| Optional HTTPS hosting | Vercel |
-| Long-term target | OBS Studio |
+| Application | Static HTML, CSS, and native JavaScript modules |
+| AI engine | MediaPipe Tasks Vision, version 0.10.21 |
+| Segmentation model | MediaPipe Selfie Segmenter Landscape |
+| Composition | Canvas 2D and alpha mask |
+| Source control | GitHub, `main` |
+| Hosting | Vercel static site |
+| Backend | None |
 
-The segmentation layer should remain modular so alternative models can be evaluated without rewriting camera handling or the UI.
+All video frames are intended to remain on the client. The application downloads its JavaScript AI runtime, WASM assets, and model from external endpoints on first use. No video upload or recording is implemented.
 
-## Proposed processing pipeline
+### Run and deploy
 
-1. Request camera access after a user action using `getUserMedia`.
-2. Obtain frames from the selected camera.
-3. Run a person-segmentation model to generate a mask.
-4. Refine the mask for smoother edges and improved temporal consistency.
-5. Composite the video and mask onto a canvas with transparency.
-6. Display previews and performance metrics.
+No npm install, TypeScript compiler, or bundler is required. Serve the repository root from a local HTTP server on `localhost`, or use the connected Vercel project. Webcam access needs a secure context such as HTTPS or localhost.
 
-All video frame processing is intended to run on the client. The browser may still download application assets and model files over the network.
+The repository's `vercel.json` configures a static website without an installation or build step. Vercel publishes the `main` branch.
 
-## Target development environment
-
-- Windows 11, 64-bit
-- Intel Core i5-1335U
-- Intel Iris Xe Graphics
-- 16 GB RAM
-- Sandberg external webcam, up to 1920 × 1080 at 30 FPS
-- OBS Studio 33.0.1, 64-bit
-
-The initial solution should not require administrator privileges or NVIDIA-specific acceleration. Device policies and browser permissions must be respected.
-
-## Proposed repository structure
+## Repository layout
 
 ```text
 camlayer/
 ├── README.md
-├── vercel.json
 ├── index.html
+├── vercel.json
+├── .gitignore
 ├── src/
 │   ├── main.js
 │   └── styles.css
 └── docs/
+    ├── development-status.md
     ├── architecture.md
-    └── testplan.md
+    └── test-plan.md
 ```
 
-The first implementation lives in `src/main.js` and `src/styles.css`. Future iterations may split the JavaScript into independent modules.
-
-## Version 0.2.6: optimized directional mask processing
-
-- Replaces the expensive radius-dependent erosion/dilation loops with linear-time sliding-window min/max filtering.
-- Preserves the signed Edge softness behavior, including inward erosion and outward dilation.
-- Reuses mask buffers to reduce allocations while processing video frames.
-- The earlier version showed approximately 7.7 processing FPS and 144 ms per frame in one 1280 × 720 test; improvement must be measured on the same machine and settings.
-- Test image quality and performance with a stationary person and during hand movement before treating the optimization as validated.
-
-## Version 0.2.5: directional edge geometry
-
-- Replaces the subtle confidence-threshold offset with actual alpha-mask morphology.
-- Negative Edge softness erodes the silhouette inward; positive Edge softness dilates it outward.
-- Both directions apply feathering after the geometric adjustment. At 0.00, neither operation applies.
-- The morphological radius scales with output width, with a capped radius at the native model mask resolution.
-- Fine details may disappear with aggressive inward erosion. Outward dilation may include a halo around the person.
-- Performance may be lower than previous versions at stronger settings, particularly at high resolution.
-
-## Version 0.2.4: signed edge softness
-
-- Edge softness now ranges from -2.00 to +2.00.
-- Negative values increase the effective foreground cutoff to contract the visible edge inward; positive values reduce the cutoff to extend the visible edge outward.
-- Both signs apply an equal feather radius, proportional to the absolute value (up to 16 output pixels).
-- Zero means no additional feather and no softness-based threshold shift.
-- Saved softness preferences from v0.2 are retained and the new negative range is accepted.
-- This is an approximate confidence-mask offset, not geometric erosion or dilation. Results depend on mask confidence and lighting.
-
-## Version 0.2.3: extended edge stability range
-
-- Extends Edge stability from 1.00 to 2.00 and persists the new range in local settings.
-- Values above 1.00 strengthen smoothing of nearly stationary edges, up to a capped 95.5% historical weight.
-- Rapid changes still release the historical mask according to the motion-adaptive filter.
-- Stronger filtering may cause subtle lag for slow, low-contrast motion. Test carefully before using high settings in production.
-
-## Version 0.2.2: adaptive edge stability
-
-- Adds an **Edge stability** slider from 0.00 to 1.00, saved locally.
-- Uses adaptive temporal smoothing: minor per-pixel confidence changes receive stronger filtering, while large changes get an immediate response.
-- The stabilization checkbox still disables the temporal filter when unchecked.
-- Edge stability cannot distinguish all real movement from model noise. Verify both stationary contours and rapid hand movements, especially at high stability settings.
-- No extra AI model, server, or build process.
-
-## Version 0.2.1: visible edge controls
-
-- Edge softness now spans 0.00 to 2.00 and applies visible alpha-mask feathering (up to 16 output pixels), independent of threshold.
-- Edge cleanup now applies adjustable spatial denoising to the confidence mask, using a larger kernel at higher settings.
-- Threshold remains a separate mask cut-off control.
-- High softness and cleanup values can remove fine finger and hair details and may cost extra processing time.
-
-## Version 0.2: edge and preference improvements
-
-- Updated initial defaults: threshold 0.35, softness 0.28.
-- Edge cleanup control (0.00 to 1.00), applying a small weighted spatial filter only to uncertain mask pixels.
-- Motion-aware temporal smoothing, reducing trailing artifacts when confidence changes rapidly.
-- Persistent camera, resolution, threshold, softness, cleanup, checkerboard, and stabilization preferences in browser localStorage.
-- No backend or build process; this is still a static JavaScript app.
-
-**Important:** Edge cleanup is a lightweight blur of uncertain mask regions, not a new AI model. Fine details may still be lost at high threshold values. The quality and performance impact need testing with hands, hair, and movement.
+Current processing and UI logic are in `src/main.js`. Further modularization is a future improvement, not a prerequisite for testing.
 
 ## Roadmap
 
-| Version | Scope |
-| --- | --- |
-| **v0.1** | Camera capture, person segmentation, transparent preview, basic adjustments, and performance monitoring |
-| **v0.2** | Improved adaptive edge processing and locally persisted settings; model comparisons remain future work |
-| **v0.3** | Test and select a practical OBS integration approach |
-| **v1.0** | Stable workflows, verified image quality and performance, and user documentation |
+- **v0.1:** First working browser camera and segmentation preview (completed).
+- **v0.2.x:** Refinement controls, preferences, edge stability, signed morphology, and performance tuning (in progress).
+- **Next:** Verify v0.2.6 correctness and performance, then consider simplification and further quality improvements.
+- **v0.3 (planned):** Test practical ways to provide an alpha-enabled source to OBS Studio.
+- **v1.0 (future):** Stable integration, tested quality and latency, installation and user documentation.
 
-## Testing and acceptance criteria
+## Known limitations
 
-We will compare the result against Teams using the same camera, lighting conditions, and framing. Important scenarios include:
+- Strong inward edge adjustments can remove thin details such as hair or fingers. Strong outward settings may reveal halos.
+- The mask can flicker with complex backgrounds and movement; strong stabilization can introduce trailing, especially for slow motion.
+- Processing FPS is not the same as camera FPS; inference and render time is not end-to-end latency.
+- OBS Browser Source camera permissions, alpha handling, and camera sharing have **not** been validated.
+- No formal comparison with Teams, extended stability run, or model license review has been completed.
 
-- Hair and shoulders against light and dark backgrounds.
-- Fast head and hand movements.
-- Hands in front of the face and objects held close to the body.
-- Low-light conditions.
-- Mask holes, flickering, halos, and motion trails.
+## Documentation
 
-We will measure FPS, latency, and CPU/GPU load. The v0.1 acceptance target is a usable live preview. Teams-like quality will require separate comparative evaluation.
+- [Development Status](docs/development-status.md): day-one history, tested behavior, current blockers, and precise continuation steps.
+- [Architecture](docs/architecture.md): current capture, segmentation, mask-processing, and rendering pipeline.
+- [Test Plan](docs/test-plan.md): repeatable quality and performance checks for the next development session.
 
-## OBS integration: open questions
+## Repository language
 
-A transparent canvas in Chrome or Edge does **not** prove that OBS Browser Source can access the camera or preserve the alpha channel under identical conditions. Camera sharing between the app and OBS may also depend on the device driver.
-
-We will test these constraints explicitly before selecting an integration method. Alternatives may include a separate rendering process or a native OBS plugin, subject to feasibility and device policy.
-
-## Getting started
-
-### Run locally
-
-No Node.js, package installation, transpilation, or bundling is required. Serve the repository directory over localhost using any simple static HTTP server, then open the local URL in a modern browser. Camera access requires localhost or HTTPS.
-
-### Vercel deployment
-
-The `vercel.json` file explicitly selects the **Other** framework preset and serves files from the repository root. There is no install or build step. Connect the repository to Vercel and deploy branch `main`.
-
-The browser downloads MediaPipe runtime code, WebAssembly assets, and the segmentation model from external hosts. Video frames are processed locally and are not sent to those hosts.
-
-**Verification status:** The v0.1 camera pipeline ran successfully in a browser at 1280 × 720. v0.2 requires fresh deployment and quality testing.
-
-## Privacy, security, and licensing
-
-- Webcam video must not be uploaded to a backend by default.
-- No automatic recording or cloud video analysis is planned for the MVP.
-- Library and model-weight licenses must be reviewed before distribution.
-- Enterprise device policies, browser permissions, and installation restrictions must be respected.
-
-## Language convention
-
-All repository content, including source code, code comments, documentation, commit messages, issue descriptions, and pull request descriptions, should be written in **English**.
+All source code, code comments, user-facing app strings, documentation, commit messages, issues, and pull request descriptions are written in **English**. Project discussions may use other languages.
 
 ---
 
 **Project started:** November 4, 2026  
-**Current milestone:** CamLayer v0.2.6 optimized mask morphology
+**Last documented status:** November 4, 2026  
+**Next milestone:** Verify CamLayer v0.2.6 before starting OBS integration.
