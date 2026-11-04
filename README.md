@@ -38,7 +38,7 @@ OBS integration is **out of scope for v0.1**.
 
 | Component | Technology |
 | --- | --- |
-| Application | TypeScript and Vite |
+| Application | Native JavaScript modules, HTML, and CSS |
 | Initial segmentation engine | MediaPipe Tasks Vision |
 | Compositing | Canvas 2D or WebGL |
 | Source control | GitHub |
@@ -74,22 +74,17 @@ The initial solution should not require administrator privileges or NVIDIA-speci
 ```text
 camlayer/
 ├── README.md
-├── package.json
+├── vercel.json
 ├── index.html
 ├── src/
-│   ├── main.ts
-│   ├── camera.ts
-│   ├── segmenter.ts
-│   ├── compositor.ts
-│   ├── ui.ts
+│   ├── main.js
 │   └── styles.css
-├── public/
 └── docs/
     ├── architecture.md
     └── testplan.md
 ```
 
-The initial application currently lives in `src/main.ts` and `src/styles.css`. The proposed modular files and documentation folders have not been created yet.
+The first implementation lives in `src/main.js` and `src/styles.css`. Future iterations may split the JavaScript into independent modules.
 
 ## Roadmap
 
@@ -120,33 +115,17 @@ We will test these constraints explicitly before selecting an integration method
 
 ## Getting started
 
-### Local development
+### Run locally
 
-Requirements: Node.js and npm.
-
-```bash
-npm install
-npm run dev
-```
-
-Open the local URL printed by Vite. To build the static production site:
-
-```bash
-npm run build
-npm run preview
-```
+No Node.js, package installation, transpilation, or bundling is required. Serve the repository directory over localhost using any simple static HTTP server, then open the local URL in a modern browser. Camera access requires localhost or HTTPS.
 
 ### Vercel deployment
 
-Connect this GitHub repository to a Vercel project with the Vite framework preset:
+The `vercel.json` file explicitly selects the **Other** framework preset and serves files from the repository root. There is no install or build step. Connect the repository to Vercel and deploy branch `main`.
 
-- **Install command:** `npm install`
-- **Build command:** `npm run build`
-- **Output directory:** `dist`
+The browser downloads MediaPipe runtime code, WebAssembly assets, and the segmentation model from external hosts. Video frames are processed locally and are not sent to those hosts.
 
-The app is static and requires no backend or environment variables for the initial implementation. Webcam access requires HTTPS (provided by Vercel) or localhost. The browser downloads MediaPipe runtime and model files at first use, so internet access is needed for initial model loading.
-
-**Verification status:** The first implementation has been committed, but a successful production build, live deployment, and real-camera performance have not yet been confirmed.
+**Verification status:** Source files are committed, but deployment and real-camera testing still require confirmation.
 
 ## Privacy, security, and licensing
 
