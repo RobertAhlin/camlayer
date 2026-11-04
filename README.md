@@ -86,6 +86,14 @@ camlayer/
 
 The first implementation lives in `src/main.js` and `src/styles.css`. Future iterations may split the JavaScript into independent modules.
 
+## Version 0.2.6: optimized directional mask processing
+
+- Replaces the expensive radius-dependent erosion/dilation loops with linear-time sliding-window min/max filtering.
+- Preserves the signed Edge softness behavior, including inward erosion and outward dilation.
+- Reuses mask buffers to reduce allocations while processing video frames.
+- The earlier version showed approximately 7.7 processing FPS and 144 ms per frame in one 1280 × 720 test; improvement must be measured on the same machine and settings.
+- Test image quality and performance with a stationary person and during hand movement before treating the optimization as validated.
+
 ## Version 0.2.5: directional edge geometry
 
 - Replaces the subtle confidence-threshold offset with actual alpha-mask morphology.
@@ -191,4 +199,4 @@ All repository content, including source code, code comments, documentation, com
 ---
 
 **Project started:** November 4, 2026  
-**Current milestone:** CamLayer v0.2.5 directional mask morphology
+**Current milestone:** CamLayer v0.2.6 optimized mask morphology
