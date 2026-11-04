@@ -2,73 +2,74 @@
 
 **AI Background Removal for OBS Studio**
 
-CamLayer är ett projekt för att frilägga en person från en webbkamera i realtid med AI, utan green screen. Målet är att ge en mjuk, stabil och naturlig bakgrundsborttagning med bildkvalitet jämförbar med Microsoft Teams, och på sikt kunna använda resultatet som en transparent källa i OBS Studio.
+CamLayer is an experimental project for real-time AI-powered webcam background removal without a green screen. The long-term goal is to produce a clean, stable, transparent video layer that can be used with OBS Studio.
 
-> **Status:** Planering. CamLayer v0.1 är ännu inte implementerad.
+Microsoft Teams is our visual quality benchmark. Achieving comparable quality is a goal to test, not a guaranteed property of the initial model.
 
-## Mål
+> **Project status:** Planning. Version 0.1 has not been implemented yet.
 
-- Frilägg personen i kamerabilden i realtid.
-- Behåll genomskinlig bakgrund (alfakanal) för flexibel komposition.
-- Prioritera bildkvalitet, stabila konturer och låg fördröjning.
-- Kör kamerabehandlingen lokalt på användarens dator, utan att skicka videoströmmen till en server.
-- Utveckla och testa en fristående webbapp innan vi väljer lösning för OBS-integrationen.
+## Project goals
 
-Microsoft Teams används som **visuell kvalitetsreferens**, inte som en teknisk implementation eller en garanti för samma resultat.
+- Segment the person in a live webcam feed.
+- Preserve transparency through an alpha channel for flexible compositing.
+- Prioritize natural edges, temporal stability, low latency, and practical performance.
+- Process camera frames locally on the user's device, without uploading video to a server.
+- Validate the standalone browser experience before deciding how to integrate with OBS Studio.
 
-## Planerad MVP: v0.1
+## Version 0.1: planned MVP
 
-Den första versionen ska köras i en vanlig webbläsare och innehålla:
+The first version will be a browser application featuring:
 
-- Starta och stoppa webbkameran efter användarens medgivande.
-- Lista och välja mellan tillgängliga kameror.
-- Visa originalbilden och den AI-frilagda bilden sida vid sida.
-- Visa transparent bakgrund, med valbart rutmönster i förhandsvisningen.
-- Justera masktröskel och kantmjukhet.
-- Enkel stabilisering av personmasken mellan bildrutor.
-- Valbar bearbetningsupplösning, inledningsvis 640 × 360 och 1280 × 720.
-- Visa bearbetningshastighet (FPS) och ungefärlig behandlingstid.
-- Hantera kamerafel och nekade behörigheter.
+- Start and stop controls for camera access, with explicit user permission.
+- Camera enumeration and selection.
+- Side-by-side previews of the original feed and the segmented output.
+- A transparent output canvas and an optional checkerboard preview.
+- Adjustable mask threshold and edge softness.
+- Basic temporal smoothing to reduce mask flicker.
+- Selectable processing resolutions, initially 640 × 360 and 1280 × 720.
+- Processing FPS and approximate per-frame processing time.
+- Clear error handling for unavailable cameras or denied permissions.
 
-**Klart för v0.1** när vi kan öppna webbappen, aktivera kameran och se en rörlig person med transparent bakgrund i realtid. **OBS-integrering ingår inte i v0.1.**
+**Definition of done:** A user can open the browser app, enable a camera, move in front of it, and see a person-only output with a transparent background in real time.
 
-## Föreslagen teknik
+OBS integration is **out of scope for v0.1**.
 
-| Del | Teknik |
+## Proposed technology stack
+
+| Component | Technology |
 | --- | --- |
-| Webbapp | TypeScript + Vite |
-| Personsegmentering | MediaPipe Tasks Vision (första modellen att utvärdera) |
-| Bildkomposition | Canvas 2D eller WebGL |
-| Versionshantering | GitHub |
-| Valfri webbpublicering | Vercel (HTTPS) |
-| Målplattform på sikt | OBS Studio |
+| Application | TypeScript and Vite |
+| Initial segmentation engine | MediaPipe Tasks Vision |
+| Compositing | Canvas 2D or WebGL |
+| Source control | GitHub |
+| Optional HTTPS hosting | Vercel |
+| Long-term target | OBS Studio |
 
-Segmenteringsmotorn ska hållas utbytbar så att andra modeller kan jämföras om MediaPipe inte ger tillräcklig kvalitet.
+The segmentation layer should remain modular so alternative models can be evaluated without rewriting camera handling or the UI.
 
-## Hur det är tänkt att fungera
+## Proposed processing pipeline
 
-1. Webbläsaren får kameratillstånd efter ett aktivt klick.
-2. En segmenteringsmodell identifierar personen i varje bildruta.
-3. Masken behandlas för mjukare och stabilare konturer.
-4. Kamerabilden kombineras med masken till en transparent canvas.
-5. Resultat och prestanda visas i gränssnittet.
+1. Request camera access after a user action using `getUserMedia`.
+2. Obtain frames from the selected camera.
+3. Run a person-segmentation model to generate a mask.
+4. Refine the mask for smoother edges and improved temporal consistency.
+5. Composite the video and mask onto a canvas with transparency.
+6. Display previews and performance metrics.
 
-Videobilder ska inte skickas till någon backend. Webbappen kan däremot behöva hämta programkod och modellfiler via nätverket.
+All video frame processing is intended to run on the client. The browser may still download application assets and model files over the network.
 
-## Utvecklingsmiljö
+## Target development environment
 
-Första målmaskinen:
-
-- Windows 11, 64-bitars
+- Windows 11, 64-bit
 - Intel Core i5-1335U
 - Intel Iris Xe Graphics
 - 16 GB RAM
-- Extern Sandberg-webbkamera, upp till 1920 × 1080 vid 30 fps
-- OBS Studio 33.0.1, 64-bitars
+- Sandberg external webcam, up to 1920 × 1080 at 30 FPS
+- OBS Studio 33.0.1, 64-bit
 
-Lösningen ska i första hand kunna användas utan administrativa installationsrättigheter. Vi förutsätter inte NVIDIA RTX eller särskilda GPU-funktioner.
+The initial solution should not require administrator privileges or NVIDIA-specific acceleration. Device policies and browser permissions must be respected.
 
-## Planerad projektstruktur
+## Proposed repository structure
 
 ```text
 camlayer/
@@ -88,42 +89,53 @@ camlayer/
     └── testplan.md
 ```
 
-Strukturen är planerad och filerna skapas under utvecklingen.
+This structure is a plan, not a list of files already present in the repository.
 
-## Färdplan
+## Roadmap
 
-| Version | Innehåll |
+| Version | Scope |
 | --- | --- |
-| **v0.1** | Webbkameraflöde, AI-segmentering, transparent förhandsvisning, grundläggande justering och prestandamätning |
-| **v0.2** | Jämföra modeller och förbättra hår, händer, kanter, flimmer samt lokalt sparade inställningar |
-| **v0.3** | Undersöka och testa integration med OBS Studio |
-| **v1.0** | Stabilt användarflöde, verifierad bildkvalitet och prestanda, dokumentation |
+| **v0.1** | Camera capture, person segmentation, transparent preview, basic adjustments, and performance monitoring |
+| **v0.2** | Compare models, improve hair/hands/edges, reduce flicker, and persist settings locally |
+| **v0.3** | Test and select a practical OBS integration approach |
+| **v1.0** | Stable workflows, verified image quality and performance, and user documentation |
 
-## Testning och öppna frågor
+## Testing and acceptance criteria
 
-Vi ska jämföra med Teams under samma ljusförhållanden och kamera, särskilt vid:
+We will compare the result against Teams using the same camera, lighting conditions, and framing. Important scenarios include:
 
-- Hår och axlar mot ljus respektive mörk bakgrund.
-- Snabba rörelser med huvud och händer.
-- Föremål nära kroppen och händer framför ansiktet.
-- Svag belysning.
-- Flimmer, konturfel, ljusa halos och rörelsesläp.
+- Hair and shoulders against light and dark backgrounds.
+- Fast head and hand movements.
+- Hands in front of the face and objects held close to the body.
+- Low-light conditions.
+- Mask holes, flickering, halos, and motion trails.
 
-Vi ska även mäta FPS, fördröjning och CPU/GPU-belastning.
+We will measure FPS, latency, and CPU/GPU load. The v0.1 acceptance target is a usable live preview. Teams-like quality will require separate comparative evaluation.
 
-**OBS-kompatibilitet behöver verifieras separat.** En transparent canvas i Chrome eller Edge garanterar inte att OBS Browser Source kan använda kameran eller bevara transparensen på samma sätt. Kameran kanske inte heller kan öppnas av flera program samtidigt. Därför beslutas integrationsmetod först efter praktiska tester.
+## OBS integration: open questions
 
-## Kom igång
+A transparent canvas in Chrome or Edge does **not** prove that OBS Browser Source can access the camera or preserve the alpha channel under identical conditions. Camera sharing between the app and OBS may also depend on the device driver.
 
-Projektet är ännu inte körbart. Nästa steg är att skapa Vite-projektet med TypeScript, implementera kamerastart och därefter lägga till AI-segmentering.
+We will test these constraints explicitly before selecting an integration method. Alternatives may include a separate rendering process or a native OBS plugin, subject to feasibility and device policy.
 
-När den första implementationen finns dokumenteras installationskommandon och körinstruktioner här.
+## Getting started
 
-## Integritet och licenser
+The application has not been implemented yet. The next development step is to scaffold a Vite + TypeScript application, implement basic camera capture, and then integrate an initial segmentation model.
 
-CamLayer ska behandla kamerabilder lokalt. Ingen automatisk videouppladdning eller inspelning ingår i MVP. Licenser för kodbibliotek och modellfiler måste kontrolleras innan eventuell distribution. Datorns IT-policy och kamerabehörigheter ska respekteras.
+Build and run instructions will be added when executable code is available.
+
+## Privacy, security, and licensing
+
+- Webcam video must not be uploaded to a backend by default.
+- No automatic recording or cloud video analysis is planned for the MVP.
+- Library and model-weight licenses must be reviewed before distribution.
+- Enterprise device policies, browser permissions, and installation restrictions must be respected.
+
+## Language convention
+
+All repository content, including source code, code comments, documentation, commit messages, issue descriptions, and pull request descriptions, should be written in **English**.
 
 ---
 
-**Projektstart:** 4 november 2026  
-**Aktuell milstolpe:** CamLayer v0.1 MVP
+**Project started:** November 4, 2026  
+**Current milestone:** CamLayer v0.1 MVP
