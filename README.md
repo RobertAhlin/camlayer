@@ -86,6 +86,15 @@ camlayer/
 
 The first implementation lives in `src/main.js` and `src/styles.css`. Future iterations may split the JavaScript into independent modules.
 
+## Version 0.2.4: signed edge softness
+
+- Edge softness now ranges from -2.00 to +2.00.
+- Negative values increase the effective foreground cutoff to contract the visible edge inward; positive values reduce the cutoff to extend the visible edge outward.
+- Both signs apply an equal feather radius, proportional to the absolute value (up to 16 output pixels).
+- Zero means no additional feather and no softness-based threshold shift.
+- Saved softness preferences from v0.2 are retained and the new negative range is accepted.
+- This is an approximate confidence-mask offset, not geometric erosion or dilation. Results depend on mask confidence and lighting.
+
 ## Version 0.2.3: extended edge stability range
 
 - Extends Edge stability from 1.00 to 2.00 and persists the new range in local settings.
@@ -173,4 +182,4 @@ All repository content, including source code, code comments, documentation, com
 ---
 
 **Project started:** November 4, 2026  
-**Current milestone:** CamLayer v0.2.3 extended edge stability
+**Current milestone:** CamLayer v0.2.4 signed edge softness
