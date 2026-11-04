@@ -1,4 +1,4 @@
-import { FilesetResolver, ImageSegmenter } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs';
+const MEDIAPIPE_MODULE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs';
 
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/1/selfie_segmenter_landscape.tflite';
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm';
@@ -85,8 +85,14 @@ async function listCameras() {
 
 async function getSegmenter() {
   if (segmenter) return segmenter;
-  const vision = await FilesetResolver.forVisionTasks(WASM_URL);
-  segmenter = await ImageSegmenter.createFromOptions(vision, {
+  let mediaPipe;
+  try {
+    mediaPipe = await import(MEDIAPIPE_MODULE_URL);
+  } catch (error) {
+    throw new Error('Could not load the AI library. Check your connection or browser content blocking.');
+  }
+  const vision = await mediaPipe.FilesetResolver.forVisionTasks(WASM_URL);
+  segmenter = await mediaPipe.ImageSegmenter.createFromOptions(vision, {
     baseOptions: { modelAssetPath: MODEL_URL, delegate: 'CPU' },
     runningMode: 'VIDEO',
     outputConfidenceMasks: true,
