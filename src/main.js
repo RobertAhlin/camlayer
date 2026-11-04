@@ -380,7 +380,7 @@ function stop() {
 
 startButton.addEventListener('click', () => { void start(); });
 stopButton.addEventListener('click', stop);
-for (const [input, label] of [[thresholdInput, 'threshold-value'], [softnessInput, 'softness-value'], [cleanupInput, 'cleanup-value']]) {
+for (const [input, label] of [[thresholdInput, 'threshold-value'], [softnessInput, 'softness-value'], [cleanupInput, 'cleanup-value'], [stabilityInput, 'stability-value']]) {
   input.addEventListener('input', () => { element(label).value = Number(input.value).toFixed(2); saveSettings(); });
 }
 for (const control of [cameraSelect, qualitySelect, stabilizeInput, checkerInput]) {
