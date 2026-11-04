@@ -1,10 +1,10 @@
 const MEDIAPIPE_MODULE_URLS = [
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs',
-  'https://unpkg.com/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs'
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs',
+  'https://unpkg.com/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs'
 ];
 
 const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/1/selfie_segmenter_landscape.tflite';
-const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm';
+const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm';
 
 const app = document.querySelector('#app');
 if (!app) throw new Error('Application root is missing.');
