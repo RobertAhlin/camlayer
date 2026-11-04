@@ -12,3 +12,5 @@ button{border:0;border-radius:11px;padding:12px 19px;color:#0d1530;background:#8
 .metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.metric{padding:15px 10px;background:#19243a;border-radius:12px;text-align:center}.metric strong{display:block;font-family:'Space Grotesk',sans-serif;font-size:25px;letter-spacing:-.04em}.metric span{font-size:11px;color:#9bacc8}
 .status{display:flex;align-items:center;gap:9px;color:#a8b8d3;font-size:13px;margin:20px 0 0;line-height:1.5}.dot{width:8px;height:8px;border-radius:50%;background:#f7b86c;flex:none}.status.running .dot{background:#70e6ae}.status.error .dot{background:#ff7e91}.privacy{color:#7889a9;font-size:12px;line-height:1.6;margin-top:23px}
 @media(max-width:900px){.views,.bottom{grid-template-columns:1fr}.shell{padding-top:20px}.hero{margin-bottom:20px}}@media(max-width:560px){.sliders{grid-template-columns:1fr}.toolbar{align-items:stretch}.field,.field select{width:100%;max-width:none}.toolbar button{width:100%}}
+
+.setting-help{margin:9px 0 0;color:#8999b6;font-size:11px;line-height:1.45}

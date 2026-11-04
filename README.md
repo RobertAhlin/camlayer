@@ -6,7 +6,7 @@ CamLayer is an experimental project for real-time AI-powered webcam background r
 
 Microsoft Teams is our visual quality benchmark. Achieving comparable quality is a goal to test, not a guaranteed property of the initial model.
 
-> **Project status:** Initial v0.1 implementation committed. Deployment and real-camera testing are pending.
+> **Project status:** v0.1 was validated with a real webcam. v0.2 edge-refinement and preferences update committed; live verification is pending.
 
 ## Project goals
 
@@ -16,7 +16,7 @@ Microsoft Teams is our visual quality benchmark. Achieving comparable quality is
 - Process camera frames locally on the user's device, without uploading video to a server.
 - Validate the standalone browser experience before deciding how to integrate with OBS Studio.
 
-## Version 0.1: planned MVP
+## Version 0.1: initial working MVP
 
 The first version will be a browser application featuring:
 
@@ -86,12 +86,22 @@ camlayer/
 
 The first implementation lives in `src/main.js` and `src/styles.css`. Future iterations may split the JavaScript into independent modules.
 
+## Version 0.2: edge and preference improvements
+
+- Updated initial defaults: threshold 0.35, softness 0.28.
+- Edge cleanup control (0.00 to 1.00), applying a small weighted spatial filter only to uncertain mask pixels.
+- Motion-aware temporal smoothing, reducing trailing artifacts when confidence changes rapidly.
+- Persistent camera, resolution, threshold, softness, cleanup, checkerboard, and stabilization preferences in browser localStorage.
+- No backend or build process; this is still a static JavaScript app.
+
+**Important:** Edge cleanup is a lightweight blur of uncertain mask regions, not a new AI model. Fine details may still be lost at high threshold values. The quality and performance impact need testing with hands, hair, and movement.
+
 ## Roadmap
 
 | Version | Scope |
 | --- | --- |
 | **v0.1** | Camera capture, person segmentation, transparent preview, basic adjustments, and performance monitoring |
-| **v0.2** | Compare models, improve hair/hands/edges, reduce flicker, and persist settings locally |
+| **v0.2** | Improved adaptive edge processing and locally persisted settings; model comparisons remain future work |
 | **v0.3** | Test and select a practical OBS integration approach |
 | **v1.0** | Stable workflows, verified image quality and performance, and user documentation |
 
@@ -125,7 +135,7 @@ The `vercel.json` file explicitly selects the **Other** framework preset and ser
 
 The browser downloads MediaPipe runtime code, WebAssembly assets, and the segmentation model from external hosts. Video frames are processed locally and are not sent to those hosts.
 
-**Verification status:** Source files are committed, but deployment and real-camera testing still require confirmation.
+**Verification status:** The v0.1 camera pipeline ran successfully in a browser at 1280 × 720. v0.2 requires fresh deployment and quality testing.
 
 ## Privacy, security, and licensing
 
@@ -141,4 +151,4 @@ All repository content, including source code, code comments, documentation, com
 ---
 
 **Project started:** November 4, 2026  
-**Current milestone:** CamLayer v0.1 initial implementation and deployment verification
+**Current milestone:** CamLayer v0.2 edge refinement and stored preferences

@@ -11,7 +11,7 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.1</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
@@ -23,7 +23,7 @@ app.innerHTML = `
       <section class="panel"><div class="panel-header"><strong>Background removed</strong><span class="pill">ALPHA OUTPUT</span></div><div class="stage checker" id="output-stage"><canvas id="output"></canvas><div class="placeholder"><div class="mark">✦</div>AI output appears here</div></div></section>
     </div>
     <div class="bottom">
-      <section class="settings"><h2 class="section-title">Refine your image</h2><div class="sliders"><div class="setting"><label class="slider-label" for="threshold">Mask threshold <output id="threshold-value">0.50</output></label><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.50"></div><div class="setting"><label class="slider-label" for="softness">Edge softness <output id="softness-value">0.20</output></label><input id="softness" type="range" min="0.02" max="0.50" step="0.01" value="0.20"></div></div><label class="checkbox"><input id="checker" type="checkbox" checked> Show checkerboard behind the transparent output</label><label class="checkbox"><input id="stabilize" type="checkbox" checked> Stabilize mask between frames</label></section>
+      <section class="settings"><h2 class="section-title">Refine your image</h2><div class="sliders"><div class="setting"><label class="slider-label" for="threshold">Mask threshold <output id="threshold-value">0.35</output></label><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.35"></div><div class="setting"><label class="slider-label" for="softness">Edge softness <output id="softness-value">0.28</output></label><input id="softness" type="range" min="0.02" max="0.50" step="0.01" value="0.28"></div><div class="setting"><label class="slider-label" for="cleanup">Edge cleanup <output id="cleanup-value">0.30</output></label><input id="cleanup" type="range" min="0" max="1" step="0.05" value="0.30"><p class="setting-help">Smooths isolated edge noise. Higher values may soften fine details.</p></div></div><label class="checkbox"><input id="checker" type="checkbox" checked> Show checkerboard behind the transparent output</label><label class="checkbox"><input id="stabilize" type="checkbox" checked> Stabilize mask between frames</label></section>
       <section class="metrics"><h2 class="section-title">Live performance</h2><div class="metric-grid"><div class="metric"><strong id="fps">—</strong><span>Processing FPS</span></div><div class="metric"><strong id="latency">—</strong><span>Inference + render (ms)</span></div><div class="metric"><strong id="dimensions">—</strong><span>Output size</span></div></div><p id="status" class="status"><span class="dot"></span><span id="status-text">Ready to start. Camera permission is requested only after clicking Start.</span></p></section>
     </div><p class="privacy">Privacy first: webcam frames stay in this browser tab. Model and runtime files are downloaded from external hosts on first use. No recording, upload, or OBS integration is included in this build.</p>
   </div>`;
@@ -41,6 +41,7 @@ const startButton = element('start');
 const stopButton = element('stop');
 const thresholdInput = element('threshold');
 const softnessInput = element('softness');
+const cleanupInput = element('cleanup');
 const stabilizeInput = element('stabilize');
 const checkerInput = element('checker');
 const originalStage = element('original-stage');
@@ -56,10 +57,61 @@ let frameId = 0;
 let lastFrameTime = 0;
 let averageFps = 0;
 let previousMask = null;
+let spatialBuffer = null;
+const SETTINGS_KEY = 'camlayer.settings.v2';
+const DEFAULT_SETTINGS = Object.freeze({ camera: '', quality: '640', threshold: 0.35, softness: 0.28, cleanup: 0.30, stabilize: true, checker: true });
 let starting = false;
 const maskCanvas = document.createElement('canvas');
 const maskContext = maskCanvas.getContext('2d');
 if (!maskContext) throw new Error('Mask canvas is unavailable.');
+
+function readSettings() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}');
+    if (!stored || typeof stored !== 'object') return { ...DEFAULT_SETTINGS };
+    const settings = { ...DEFAULT_SETTINGS };
+    for (const key of ['camera', 'quality', 'threshold', 'softness', 'cleanup', 'stabilize', 'checker']) {
+      if (typeof stored[key] === typeof settings[key]) settings[key] = stored[key];
+    }
+    if (!['640', '1280'].includes(settings.quality)) settings.quality = '640';
+    for (const [key, low, high] of [['threshold', 0.15, 0.85], ['softness', 0.02, 0.50], ['cleanup', 0, 1]]) {
+      if (!Number.isFinite(settings[key])) settings[key] = DEFAULT_SETTINGS[key];
+      settings[key] = Math.min(high, Math.max(low, settings[key]));
+    }
+    return settings;
+  } catch (error) {
+    console.warn('Saved settings could not be restored:', error);
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+const savedSettings = readSettings();
+cameraSelect.dataset.preferredCamera = savedSettings.camera;
+qualitySelect.value = savedSettings.quality;
+for (const [input, name] of [[thresholdInput, 'threshold'], [softnessInput, 'softness'], [cleanupInput, 'cleanup']]) {
+  input.value = String(savedSettings[name]);
+  element(name + '-value').value = Number(input.value).toFixed(2);
+}
+stabilizeInput.checked = savedSettings.stabilize;
+checkerInput.checked = savedSettings.checker;
+outputStage.classList.toggle('checker', checkerInput.checked);
+
+function saveSettings() {
+  const values = {
+    camera: cameraSelect.value,
+    quality: qualitySelect.value,
+    threshold: Number(thresholdInput.value),
+    softness: Number(softnessInput.value),
+    cleanup: Number(cleanupInput.value),
+    stabilize: stabilizeInput.checked,
+    checker: checkerInput.checked
+  };
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(values));
+  } catch (error) {
+    console.warn('Settings could not be saved:', error);
+  }
+}
 
 function status(message, state = 'idle') {
   element('status').className = `status ${state}`;
@@ -77,7 +129,7 @@ async function listCameras() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const cameras = devices.filter((device) => device.kind === 'videoinput');
-    const previous = cameraSelect.value;
+    const previous = cameraSelect.value || cameraSelect.dataset.preferredCamera || '';
     cameraSelect.replaceChildren(new Option('Default camera', ''));
     cameras.forEach((device, index) => cameraSelect.add(new Option(device.label || `Camera ${index + 1}`, device.deviceId)));
     if ([...cameraSelect.options].some((option) => option.value === previous)) cameraSelect.value = previous;
@@ -113,29 +165,61 @@ async function getSegmenter() {
 }
 
 function updateMask(mask, width, height) {
-  if (maskCanvas.width !== width || maskCanvas.height !== height) {
+  const size = width * height;
+  if (maskCanvas.width !== width || maskCanvas.height !== height || !previousMask || previousMask.length !== size) {
     maskCanvas.width = width;
     maskCanvas.height = height;
-    previousMask = null;
+    previousMask = new Float32Array(mask);
+    spatialBuffer = new Float32Array(size);
   }
-  const data = maskContext.createImageData(width, height);
+
   const threshold = Number(thresholdInput.value);
   const softness = Number(softnessInput.value);
+  const cleanup = Number(cleanupInput.value);
   const low = threshold - softness / 2;
   const high = threshold + softness / 2;
-  if (!previousMask || previousMask.length !== mask.length) previousMask = new Float32Array(mask);
   const stabilize = stabilizeInput.checked;
-  for (let i = 0; i < mask.length; i++) {
-    const confidence = Math.max(0, Math.min(1, mask[i]));
-    const smoothed = stabilize ? previousMask[i] * 0.55 + confidence * 0.45 : confidence;
-    previousMask[i] = smoothed;
-    const t = Math.max(0, Math.min(1, (smoothed - low) / Math.max(0.001, high - low)));
-    const alpha = t * t * (3 - 2 * t);
-    const offset = i * 4;
-    data.data[offset] = 255;
-    data.data[offset + 1] = 255;
-    data.data[offset + 2] = 255;
-    data.data[offset + 3] = Math.round(alpha * 255);
+  const data = maskContext.createImageData(width, height);
+
+  // Adapt temporal smoothing per pixel: keep steady edges stable but release
+  // quickly where the confidence changes significantly during movement.
+  for (let i = 0; i < size; i++) {
+    const current = Math.min(1, Math.max(0, mask[i]));
+    const previous = previousMask[i];
+    const difference = Math.abs(current - previous);
+    const historyWeight = stabilize ? 0.62 * (1 - Math.min(1, difference * 2.5)) : 0;
+    const blended = previous * historyWeight + current * (1 - historyWeight);
+    spatialBuffer[i] = blended;
+    previousMask[i] = blended;
+  }
+
+  // A small 3x3 weighted blur only in uncertain regions can reduce halos
+  // and isolated pixels without blurring solid foreground/background.
+  for (let y = 0; y < height; y++) {
+    const top = Math.max(0, y - 1) * width;
+    const middle = y * width;
+    const bottom = Math.min(height - 1, y + 1) * width;
+    for (let x = 0; x < width; x++) {
+      const left = Math.max(0, x - 1);
+      const right = Math.min(width - 1, x + 1);
+      const i = middle + x;
+      let confidence = spatialBuffer[i];
+      if (cleanup > 0 && confidence > 0.04 && confidence < 0.96) {
+        const weighted = (
+          spatialBuffer[top + left] + 2 * spatialBuffer[top + x] + spatialBuffer[top + right] +
+          2 * spatialBuffer[middle + left] + 4 * confidence + 2 * spatialBuffer[middle + right] +
+          spatialBuffer[bottom + left] + 2 * spatialBuffer[bottom + x] + spatialBuffer[bottom + right]
+        ) / 16;
+        confidence += (weighted - confidence) * cleanup;
+      }
+      const t = Math.max(0, Math.min(1, (confidence - low) / Math.max(0.001, high - low)));
+      const alpha = t * t * (3 - 2 * t);
+      const offset = i * 4;
+      data.data[offset] = 255;
+      data.data[offset + 1] = 255;
+      data.data[offset + 2] = 255;
+      data.data[offset + 3] = Math.round(alpha * 255);
+    }
   }
   maskContext.putImageData(data, 0, 0);
 }
@@ -212,6 +296,7 @@ async function start() {
     output.height = video.videoHeight;
     element('dimensions').textContent = `${output.width}×${output.height}`;
     previousMask = null;
+    spatialBuffer = null;
     averageFps = 0;
     lastFrameTime = 0;
     lastVideoTime = -1;
@@ -242,6 +327,7 @@ function stop() {
   originalStage.classList.remove('active');
   outputStage.classList.remove('active');
   previousMask = null;
+  spatialBuffer = null;
   element('fps').textContent = '—';
   element('latency').textContent = '—';
   element('dimensions').textContent = '—';
@@ -251,8 +337,11 @@ function stop() {
 
 startButton.addEventListener('click', () => { void start(); });
 stopButton.addEventListener('click', stop);
-for (const [input, label] of [[thresholdInput, 'threshold-value'], [softnessInput, 'softness-value']]) {
-  input.addEventListener('input', () => { element(label).value = Number(input.value).toFixed(2); });
+for (const [input, label] of [[thresholdInput, 'threshold-value'], [softnessInput, 'softness-value'], [cleanupInput, 'cleanup-value']]) {
+  input.addEventListener('input', () => { element(label).value = Number(input.value).toFixed(2); saveSettings(); });
+}
+for (const control of [cameraSelect, qualitySelect, stabilizeInput, checkerInput]) {
+  control.addEventListener('change', saveSettings);
 }
 checkerInput.addEventListener('change', () => outputStage.classList.toggle('checker', checkerInput.checked));
 window.addEventListener('pagehide', () => {
