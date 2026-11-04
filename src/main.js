@@ -145,8 +145,11 @@ function renderFrame() {
   const start = performance.now();
   const result = segmenter.segmentForVideo(video, start);
   try {
-    const personMask = result.confidenceMasks?.[1];
-    if (!personMask) throw new Error('The model did not return a person confidence mask.');
+    const masks = result.confidenceMasks ?? [];
+    // Selfie segmentation may return a single foreground confidence mask.
+    // Multi-channel variants typically place the person mask at index 1.
+    const personMask = masks.length > 1 ? masks[1] : masks[0];
+    if (!personMask) throw new Error(`The model returned no confidence mask (count: ${masks.length}).`);
     updateMask(personMask.getAsFloat32Array(), personMask.width, personMask.height);
     outputContext.globalCompositeOperation = 'source-over';
     outputContext.clearRect(0, 0, output.width, output.height);
