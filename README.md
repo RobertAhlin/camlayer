@@ -86,6 +86,14 @@ camlayer/
 
 The first implementation lives in `src/main.js` and `src/styles.css`. Future iterations may split the JavaScript into independent modules.
 
+## Version 0.2.2: adaptive edge stability
+
+- Adds an **Edge stability** slider from 0.00 to 1.00, saved locally.
+- Uses adaptive temporal smoothing: minor per-pixel confidence changes receive stronger filtering, while large changes get an immediate response.
+- The stabilization checkbox still disables the temporal filter when unchecked.
+- Edge stability cannot distinguish all real movement from model noise. Verify both stationary contours and rapid hand movements, especially at high stability settings.
+- No extra AI model, server, or build process.
+
 ## Version 0.2.1: visible edge controls
 
 - Edge softness now spans 0.00 to 2.00 and applies visible alpha-mask feathering (up to 16 output pixels), independent of threshold.
@@ -158,4 +166,4 @@ All repository content, including source code, code comments, documentation, com
 ---
 
 **Project started:** November 4, 2026  
-**Current milestone:** CamLayer v0.2.1 edge softness and cleanup refinement
+**Current milestone:** CamLayer v0.2.2 adaptive edge stabilization
