@@ -6,7 +6,7 @@ CamLayer is an experimental project for real-time AI-powered webcam background r
 
 Microsoft Teams is our visual quality benchmark. Achieving comparable quality is a goal to test, not a guaranteed property of the initial model.
 
-> **Project status:** Planning. Version 0.1 has not been implemented yet.
+> **Project status:** Initial v0.1 implementation committed. Deployment and real-camera testing are pending.
 
 ## Project goals
 
@@ -89,7 +89,7 @@ camlayer/
     └── testplan.md
 ```
 
-This structure is a plan, not a list of files already present in the repository.
+The initial application currently lives in `src/main.ts` and `src/styles.css`. The proposed modular files and documentation folders have not been created yet.
 
 ## Roadmap
 
@@ -120,9 +120,33 @@ We will test these constraints explicitly before selecting an integration method
 
 ## Getting started
 
-The application has not been implemented yet. The next development step is to scaffold a Vite + TypeScript application, implement basic camera capture, and then integrate an initial segmentation model.
+### Local development
 
-Build and run instructions will be added when executable code is available.
+Requirements: Node.js and npm.
+
+```bash
+npm install
+npm run dev
+```
+
+Open the local URL printed by Vite. To build the static production site:
+
+```bash
+npm run build
+npm run preview
+```
+
+### Vercel deployment
+
+Connect this GitHub repository to a Vercel project with the Vite framework preset:
+
+- **Install command:** `npm install`
+- **Build command:** `npm run build`
+- **Output directory:** `dist`
+
+The app is static and requires no backend or environment variables for the initial implementation. Webcam access requires HTTPS (provided by Vercel) or localhost. The browser downloads MediaPipe runtime and model files at first use, so internet access is needed for initial model loading.
+
+**Verification status:** The first implementation has been committed, but a successful production build, live deployment, and real-camera performance have not yet been confirmed.
 
 ## Privacy, security, and licensing
 
@@ -138,4 +162,4 @@ All repository content, including source code, code comments, documentation, com
 ---
 
 **Project started:** November 4, 2026  
-**Current milestone:** CamLayer v0.1 MVP
+**Current milestone:** CamLayer v0.1 initial implementation and deployment verification
