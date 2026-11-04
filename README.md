@@ -86,6 +86,13 @@ camlayer/
 
 The first implementation lives in `src/main.js` and `src/styles.css`. Future iterations may split the JavaScript into independent modules.
 
+## Version 0.2.3: extended edge stability range
+
+- Extends Edge stability from 1.00 to 2.00 and persists the new range in local settings.
+- Values above 1.00 strengthen smoothing of nearly stationary edges, up to a capped 95.5% historical weight.
+- Rapid changes still release the historical mask according to the motion-adaptive filter.
+- Stronger filtering may cause subtle lag for slow, low-contrast motion. Test carefully before using high settings in production.
+
 ## Version 0.2.2: adaptive edge stability
 
 - Adds an **Edge stability** slider from 0.00 to 1.00, saved locally.
@@ -166,4 +173,4 @@ All repository content, including source code, code comments, documentation, com
 ---
 
 **Project started:** November 4, 2026  
-**Current milestone:** CamLayer v0.2.2 adaptive edge stabilization
+**Current milestone:** CamLayer v0.2.3 extended edge stability

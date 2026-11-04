@@ -11,7 +11,7 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.2</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.3</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
@@ -23,7 +23,7 @@ app.innerHTML = `
       <section class="panel"><div class="panel-header"><strong>Background removed</strong><span class="pill">ALPHA OUTPUT</span></div><div class="stage checker" id="output-stage"><canvas id="output"></canvas><div class="placeholder"><div class="mark">✦</div>AI output appears here</div></div></section>
     </div>
     <div class="bottom">
-      <section class="settings"><h2 class="section-title">Refine your image</h2><div class="sliders"><div class="setting"><label class="slider-label" for="threshold">Mask threshold <output id="threshold-value">0.35</output></label><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.35"></div><div class="setting"><label class="slider-label" for="softness">Edge softness <output id="softness-value">0.28</output></label><input id="softness" type="range" min="0" max="2.00" step="0.01" value="0.28"></div><div class="setting"><label class="slider-label" for="cleanup">Edge cleanup <output id="cleanup-value">0.30</output></label><input id="cleanup" type="range" min="0" max="1" step="0.05" value="0.30"><p class="setting-help">Reduces mask noise and small artifacts before feathering. High values may remove fine details.</p></div><div class="setting"><label class="slider-label" for="stability">Edge stability <output id="stability-value">0.50</output></label><input id="stability" type="range" min="0" max="1" step="0.05" value="0.50"><p class="setting-help">Reduces static edge flicker while preserving faster response to larger movements.</p></div></div><label class="checkbox"><input id="checker" type="checkbox" checked> Show checkerboard behind the transparent output</label><label class="checkbox"><input id="stabilize" type="checkbox" checked> Stabilize mask between frames</label></section>
+      <section class="settings"><h2 class="section-title">Refine your image</h2><div class="sliders"><div class="setting"><label class="slider-label" for="threshold">Mask threshold <output id="threshold-value">0.35</output></label><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.35"></div><div class="setting"><label class="slider-label" for="softness">Edge softness <output id="softness-value">0.28</output></label><input id="softness" type="range" min="0" max="2.00" step="0.01" value="0.28"></div><div class="setting"><label class="slider-label" for="cleanup">Edge cleanup <output id="cleanup-value">0.30</output></label><input id="cleanup" type="range" min="0" max="1" step="0.05" value="0.30"><p class="setting-help">Reduces mask noise and small artifacts before feathering. High values may remove fine details.</p></div><div class="setting"><label class="slider-label" for="stability">Edge stability <output id="stability-value">0.50</output></label><input id="stability" type="range" min="0" max="2.00" step="0.05" value="0.50"><p class="setting-help">Reduces static edge flicker while preserving faster response to larger movements.</p></div></div><label class="checkbox"><input id="checker" type="checkbox" checked> Show checkerboard behind the transparent output</label><label class="checkbox"><input id="stabilize" type="checkbox" checked> Stabilize mask between frames</label></section>
       <section class="metrics"><h2 class="section-title">Live performance</h2><div class="metric-grid"><div class="metric"><strong id="fps">—</strong><span>Processing FPS</span></div><div class="metric"><strong id="latency">—</strong><span>Inference + render (ms)</span></div><div class="metric"><strong id="dimensions">—</strong><span>Output size</span></div></div><p id="status" class="status"><span class="dot"></span><span id="status-text">Ready to start. Camera permission is requested only after clicking Start.</span></p></section>
     </div><p class="privacy">Privacy first: webcam frames stay in this browser tab. Model and runtime files are downloaded from external hosts on first use. No recording, upload, or OBS integration is included in this build.</p>
   </div>`;
@@ -76,7 +76,7 @@ function readSettings() {
       if (typeof stored[key] === typeof settings[key]) settings[key] = stored[key];
     }
     if (!['640', '1280'].includes(settings.quality)) settings.quality = '640';
-    for (const [key, low, high] of [['threshold', 0.15, 0.85], ['softness', 0, 2.0], ['cleanup', 0, 1], ['stability', 0, 1]]) {
+    for (const [key, low, high] of [['threshold', 0.15, 0.85], ['softness', 0, 2.0], ['cleanup', 0, 1], ['stability', 0, 2.0]]) {
       if (!Number.isFinite(settings[key])) settings[key] = DEFAULT_SETTINGS[key];
       settings[key] = Math.min(high, Math.max(low, settings[key]));
     }
@@ -187,9 +187,14 @@ function updateMask(mask, width, height) {
   // rapidly reduce history weight to avoid visible trailing.
   // The blend always responds to the current frame; it never freezes pixels.
   const stability = Number(stabilityInput.value);
-  const quietHistory = 0.45 + stability * 0.43;
-  const motionThreshold = 0.035 + stability * 0.055;
-  const motionWindow = 0.12 + stability * 0.08;
+  // Extend stability to 2.0 without allowing the mask to become frozen.
+  // Above 1.0, steady edges are filtered more strongly while movement
+  // detection remains sensitive to large, fast changes.
+  const quietHistory = stability <= 1
+    ? 0.45 + stability * 0.43
+    : 0.88 + (stability - 1) * 0.075;
+  const motionThreshold = 0.035 + Math.min(stability, 1) * 0.055;
+  const motionWindow = 0.12 + Math.min(stability, 1) * 0.08;
   for (let i = 0; i < size; i++) {
     const current = Math.min(1, Math.max(0, mask[i]));
     const previous = previousMask[i];
