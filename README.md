@@ -86,6 +86,15 @@ camlayer/
 
 The first implementation lives in `src/main.js` and `src/styles.css`. Future iterations may split the JavaScript into independent modules.
 
+## Version 0.2.5: directional edge geometry
+
+- Replaces the subtle confidence-threshold offset with actual alpha-mask morphology.
+- Negative Edge softness erodes the silhouette inward; positive Edge softness dilates it outward.
+- Both directions apply feathering after the geometric adjustment. At 0.00, neither operation applies.
+- The morphological radius scales with output width, with a capped radius at the native model mask resolution.
+- Fine details may disappear with aggressive inward erosion. Outward dilation may include a halo around the person.
+- Performance may be lower than previous versions at stronger settings, particularly at high resolution.
+
 ## Version 0.2.4: signed edge softness
 
 - Edge softness now ranges from -2.00 to +2.00.
@@ -182,4 +191,4 @@ All repository content, including source code, code comments, documentation, com
 ---
 
 **Project started:** November 4, 2026  
-**Current milestone:** CamLayer v0.2.4 signed edge softness
+**Current milestone:** CamLayer v0.2.5 directional mask morphology
