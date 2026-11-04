@@ -11,7 +11,7 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.1</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
@@ -23,7 +23,7 @@ app.innerHTML = `
       <section class="panel"><div class="panel-header"><strong>Background removed</strong><span class="pill">ALPHA OUTPUT</span></div><div class="stage checker" id="output-stage"><canvas id="output"></canvas><div class="placeholder"><div class="mark">✦</div>AI output appears here</div></div></section>
     </div>
     <div class="bottom">
-      <section class="settings"><h2 class="section-title">Refine your image</h2><div class="sliders"><div class="setting"><label class="slider-label" for="threshold">Mask threshold <output id="threshold-value">0.35</output></label><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.35"></div><div class="setting"><label class="slider-label" for="softness">Edge softness <output id="softness-value">0.28</output></label><input id="softness" type="range" min="0.02" max="0.50" step="0.01" value="0.28"></div><div class="setting"><label class="slider-label" for="cleanup">Edge cleanup <output id="cleanup-value">0.30</output></label><input id="cleanup" type="range" min="0" max="1" step="0.05" value="0.30"><p class="setting-help">Smooths isolated edge noise. Higher values may soften fine details.</p></div></div><label class="checkbox"><input id="checker" type="checkbox" checked> Show checkerboard behind the transparent output</label><label class="checkbox"><input id="stabilize" type="checkbox" checked> Stabilize mask between frames</label></section>
+      <section class="settings"><h2 class="section-title">Refine your image</h2><div class="sliders"><div class="setting"><label class="slider-label" for="threshold">Mask threshold <output id="threshold-value">0.35</output></label><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.35"></div><div class="setting"><label class="slider-label" for="softness">Edge softness <output id="softness-value">0.28</output></label><input id="softness" type="range" min="0" max="2.00" step="0.01" value="0.28"></div><div class="setting"><label class="slider-label" for="cleanup">Edge cleanup <output id="cleanup-value">0.30</output></label><input id="cleanup" type="range" min="0" max="1" step="0.05" value="0.30"><p class="setting-help">Reduces mask noise and small artifacts before feathering. High values may remove fine details.</p></div></div><label class="checkbox"><input id="checker" type="checkbox" checked> Show checkerboard behind the transparent output</label><label class="checkbox"><input id="stabilize" type="checkbox" checked> Stabilize mask between frames</label></section>
       <section class="metrics"><h2 class="section-title">Live performance</h2><div class="metric-grid"><div class="metric"><strong id="fps">—</strong><span>Processing FPS</span></div><div class="metric"><strong id="latency">—</strong><span>Inference + render (ms)</span></div><div class="metric"><strong id="dimensions">—</strong><span>Output size</span></div></div><p id="status" class="status"><span class="dot"></span><span id="status-text">Ready to start. Camera permission is requested only after clicking Start.</span></p></section>
     </div><p class="privacy">Privacy first: webcam frames stay in this browser tab. Model and runtime files are downloaded from external hosts on first use. No recording, upload, or OBS integration is included in this build.</p>
   </div>`;
@@ -58,6 +58,7 @@ let lastFrameTime = 0;
 let averageFps = 0;
 let previousMask = null;
 let spatialBuffer = null;
+let cleanupBuffer = null;
 const SETTINGS_KEY = 'camlayer.settings.v2';
 const DEFAULT_SETTINGS = Object.freeze({ camera: '', quality: '640', threshold: 0.35, softness: 0.28, cleanup: 0.30, stabilize: true, checker: true });
 let starting = false;
@@ -74,7 +75,7 @@ function readSettings() {
       if (typeof stored[key] === typeof settings[key]) settings[key] = stored[key];
     }
     if (!['640', '1280'].includes(settings.quality)) settings.quality = '640';
-    for (const [key, low, high] of [['threshold', 0.15, 0.85], ['softness', 0.02, 0.50], ['cleanup', 0, 1]]) {
+    for (const [key, low, high] of [['threshold', 0.15, 0.85], ['softness', 0, 2.0], ['cleanup', 0, 1]]) {
       if (!Number.isFinite(settings[key])) settings[key] = DEFAULT_SETTINGS[key];
       settings[key] = Math.min(high, Math.max(low, settings[key]));
     }
@@ -171,18 +172,15 @@ function updateMask(mask, width, height) {
     maskCanvas.height = height;
     previousMask = new Float32Array(mask);
     spatialBuffer = new Float32Array(size);
+    cleanupBuffer = new Float32Array(size);
   }
 
   const threshold = Number(thresholdInput.value);
-  const softness = Number(softnessInput.value);
   const cleanup = Number(cleanupInput.value);
-  const low = threshold - softness / 2;
-  const high = threshold + softness / 2;
   const stabilize = stabilizeInput.checked;
   const data = maskContext.createImageData(width, height);
 
-  // Adapt temporal smoothing per pixel: keep steady edges stable but release
-  // quickly where the confidence changes significantly during movement.
+  // Adapt the historical weight to motion so fine features respond faster.
   for (let i = 0; i < size; i++) {
     const current = Math.min(1, Math.max(0, mask[i]));
     const previous = previousMask[i];
@@ -193,33 +191,56 @@ function updateMask(mask, width, height) {
     previousMask[i] = blended;
   }
 
-  // A small 3x3 weighted blur only in uncertain regions can reduce halos
-  // and isolated pixels without blurring solid foreground/background.
-  for (let y = 0; y < height; y++) {
-    const top = Math.max(0, y - 1) * width;
-    const middle = y * width;
-    const bottom = Math.min(height - 1, y + 1) * width;
-    for (let x = 0; x < width; x++) {
-      const left = Math.max(0, x - 1);
-      const right = Math.min(width - 1, x + 1);
-      const i = middle + x;
-      let confidence = spatialBuffer[i];
-      if (cleanup > 0 && confidence > 0.04 && confidence < 0.96) {
-        const weighted = (
-          spatialBuffer[top + left] + 2 * spatialBuffer[top + x] + spatialBuffer[top + right] +
-          2 * spatialBuffer[middle + left] + 4 * confidence + 2 * spatialBuffer[middle + right] +
-          spatialBuffer[bottom + left] + 2 * spatialBuffer[bottom + x] + spatialBuffer[bottom + right]
-        ) / 16;
-        confidence += (weighted - confidence) * cleanup;
+  // Edge cleanup is spatial denoising before alpha conversion.
+  // A separable box filter is much cheaper than a full 2D kernel.
+  // Radius grows up to 4 native mask pixels at maximum cleanup.
+  let values = spatialBuffer;
+  if (cleanup > 0.001) {
+    const radius = Math.max(1, Math.round(cleanup * 4));
+    const windowSize = radius * 2 + 1;
+    const horizontal = new Float32Array(size);
+    for (let y = 0; y < height; y++) {
+      const row = y * width;
+      let sum = 0;
+      for (let dx = -radius; dx <= radius; dx++) {
+        sum += spatialBuffer[row + Math.min(width - 1, Math.max(0, dx))];
       }
-      const t = Math.max(0, Math.min(1, (confidence - low) / Math.max(0.001, high - low)));
-      const alpha = t * t * (3 - 2 * t);
-      const offset = i * 4;
-      data.data[offset] = 255;
-      data.data[offset + 1] = 255;
-      data.data[offset + 2] = 255;
-      data.data[offset + 3] = Math.round(alpha * 255);
+      for (let x = 0; x < width; x++) {
+        horizontal[row + x] = sum / windowSize;
+        const leaving = Math.max(0, x - radius);
+        const entering = Math.min(width - 1, x + radius + 1);
+        sum += spatialBuffer[row + entering] - spatialBuffer[row + leaving];
+      }
     }
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      for (let dy = -radius; dy <= radius; dy++) {
+        sum += horizontal[Math.min(height - 1, Math.max(0, dy)) * width + x];
+      }
+      for (let y = 0; y < height; y++) {
+        const index = y * width + x;
+        const blurred = sum / windowSize;
+        cleanupBuffer[index] = spatialBuffer[index] * (1 - cleanup) + blurred * cleanup;
+        const leaving = Math.max(0, y - radius);
+        const entering = Math.min(height - 1, y + radius + 1);
+        sum += horizontal[entering * width + x] - horizontal[leaving * width + x];
+      }
+    }
+    values = cleanupBuffer;
+  }
+
+  // Maintain a consistent alpha transition. The Edge softness control
+  // independently feathers the resulting alpha in output-image pixels.
+  const transition = 0.15;
+  const low = threshold - transition / 2;
+  for (let i = 0; i < size; i++) {
+    const t = Math.max(0, Math.min(1, (values[i] - low) / transition));
+    const alpha = t * t * (3 - 2 * t);
+    const offset = i * 4;
+    data.data[offset] = 255;
+    data.data[offset + 1] = 255;
+    data.data[offset + 2] = 255;
+    data.data[offset + 3] = Math.round(alpha * 255);
   }
   maskContext.putImageData(data, 0, 0);
 }
@@ -237,7 +258,12 @@ function renderFrame() {
     updateMask(personMask.getAsFloat32Array(), personMask.width, personMask.height);
     outputContext.globalCompositeOperation = 'source-over';
     outputContext.clearRect(0, 0, output.width, output.height);
+    // This slider now controls visible feathering rather than confidence range.
+    // At 2.00 the feather radius is 16 output pixels, independent of resolution.
+    const featherPixels = Number(softnessInput.value) * 8;
+    outputContext.filter = featherPixels > 0 ? `blur(${featherPixels.toFixed(2)}px)` : 'none';
     outputContext.drawImage(maskCanvas, 0, 0, output.width, output.height);
+    outputContext.filter = 'none';
     outputContext.globalCompositeOperation = 'source-in';
     outputContext.drawImage(video, 0, 0, output.width, output.height);
     outputContext.globalCompositeOperation = 'source-over';
@@ -297,6 +323,7 @@ async function start() {
     element('dimensions').textContent = `${output.width}×${output.height}`;
     previousMask = null;
     spatialBuffer = null;
+    cleanupBuffer = null;
     averageFps = 0;
     lastFrameTime = 0;
     lastVideoTime = -1;
@@ -328,6 +355,7 @@ function stop() {
   outputStage.classList.remove('active');
   previousMask = null;
   spatialBuffer = null;
+  cleanupBuffer = null;
   element('fps').textContent = '—';
   element('latency').textContent = '—';
   element('dimensions').textContent = '—';

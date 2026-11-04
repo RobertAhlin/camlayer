@@ -86,6 +86,13 @@ camlayer/
 
 The first implementation lives in `src/main.js` and `src/styles.css`. Future iterations may split the JavaScript into independent modules.
 
+## Version 0.2.1: visible edge controls
+
+- Edge softness now spans 0.00 to 2.00 and applies visible alpha-mask feathering (up to 16 output pixels), independent of threshold.
+- Edge cleanup now applies adjustable spatial denoising to the confidence mask, using a larger kernel at higher settings.
+- Threshold remains a separate mask cut-off control.
+- High softness and cleanup values can remove fine finger and hair details and may cost extra processing time.
+
 ## Version 0.2: edge and preference improvements
 
 - Updated initial defaults: threshold 0.35, softness 0.28.
@@ -151,4 +158,4 @@ All repository content, including source code, code comments, documentation, com
 ---
 
 **Project started:** November 4, 2026  
-**Current milestone:** CamLayer v0.2 edge refinement and stored preferences
+**Current milestone:** CamLayer v0.2.1 edge softness and cleanup refinement
