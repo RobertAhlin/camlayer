@@ -24,11 +24,22 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $ortVersion = '1.24.2'
-          $ortZip = "onnxruntime-win-x64-$ortVersion.zip"
-          $ortUrl = "https://github.com/microsoft/onnxruntime/releases/download/v$ortVersion/$ortZip"
+          # Microsoft publishes this exact version as an official NuGet package.
+          # Its native C++ headers and Windows x64 binaries are included.
+          $ortPackage = "microsoft.ml.onnxruntime.$ortVersion.nupkg"
+          $ortUrl = "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/$ortVersion/$ortPackage"
           New-Item -ItemType Directory -Force -Path 'deps', 'models' | Out-Null
-          Invoke-WebRequest -Uri $ortUrl -OutFile "deps/$ortZip"
-          Expand-Archive -Path "deps/$ortZip" -DestinationPath 'deps' -Force
+          Invoke-WebRequest -Uri $ortUrl -OutFile "deps/$ortPackage"
+          Copy-Item "deps/$ortPackage" 'deps/onnxruntime.zip'
+          Expand-Archive -Path 'deps/onnxruntime.zip' -DestinationPath 'deps/onnxruntime' -Force
+          $required = @(
+            'deps/onnxruntime/build/native/include/onnxruntime_cxx_api.h',
+            'deps/onnxruntime/runtimes/win-x64/native/onnxruntime.lib',
+            'deps/onnxruntime/runtimes/win-x64/native/onnxruntime.dll'
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path $file -PathType Leaf)) { throw "ONNX Runtime package missing $file" }
+          }
           $modelUrl = 'https://huggingface.co/onnx-community/mediapipe_selfie_segmentation/resolve/d1eb4b9905988be58be2f6a3782e606ac9a3ca2f/onnx/model.onnx'
           Invoke-WebRequest -Uri $modelUrl -OutFile 'models/selfie_segmentation.onnx'
           $model = Get-Item 'models/selfie_segmentation.onnx'
@@ -38,18 +49,18 @@ jobs:
             throw "Model checksum mismatch: $modelHash"
           }
           Write-Host "Verified pinned model SHA256: $modelHash"
-          Get-FileHash -Algorithm SHA256 "deps/$ortZip" | Format-List
+          Get-FileHash -Algorithm SHA256 "deps/$ortPackage" | Format-List
 
       - name: Compile native model probe (MSVC x64)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $ort = 'deps/onnxruntime-win-x64-1.24.2'
+          $ort = 'deps/onnxruntime'
           $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products '*' -property installationPath
           if (-not $vsPath) { throw 'Visual Studio C++ tools not found.' }
           $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
-          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /W4 /I`"$ort/include`" native/ai-probe/src/model-probe.cpp /link /LIBPATH:`"$ort/lib`" onnxruntime.lib /OUT:camlayer-model-probe.exe"
+          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /W4 /I`"$ort/build/native/include`" native/ai-probe/src/model-probe.cpp /link /LIBPATH:`"$ort/runtimes/win-x64/native`" onnxruntime.lib /OUT:camlayer-model-probe.exe"
           cmd /c $cmd
           if ($LASTEXITCODE -ne 0) { throw "C++ compilation failed: $LASTEXITCODE" }
 
@@ -57,7 +68,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:PATH = "$pwd/deps/onnxruntime-win-x64-1.24.2/lib;$env:PATH"
+          $env:PATH = "$pwd/deps/onnxruntime/runtimes/win-x64/native;$env:PATH"
           & ./camlayer-model-probe.exe 'models/selfie_segmentation.onnx'
           if ($LASTEXITCODE -ne 0) { throw 'Native ONNX model inference test failed.' }
 
