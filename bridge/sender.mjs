@@ -8,6 +8,7 @@ export class BridgeSender {
     this.encoding = false;
     this.lastFrameAt = 0;
     this.closed = false;
+    this.generation = 0;
   }
 
   connect() {
@@ -51,15 +52,17 @@ export class BridgeSender {
 
     this.encoding = true;
     this.lastFrameAt = now;
+    const generation = this.generation;
     // WebP supports transparent alpha. Fall back to PNG if WebP encoding is unavailable.
     canvas.toBlob((blob) => {
       this.encoding = false;
-      if (blob && this.socket === socket && socket.readyState === WebSocket.OPEN &&
+      if (blob && generation === this.generation && this.socket === socket && socket.readyState === WebSocket.OPEN &&
           socket.bufferedAmount < 1200000) socket.send(blob);
     }, 'image/webp', 0.92);
   }
 
   clear() {
+    this.generation++;
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({ type: 'clear' }));
     }
@@ -67,6 +70,7 @@ export class BridgeSender {
 
   close() {
     this.closed = true;
+    this.generation++;
     this.socket?.close();
     this.socket = null;
   }
