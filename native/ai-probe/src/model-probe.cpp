@@ -10,6 +10,9 @@
 #include <string>
 #include <vector>
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #endif
 
@@ -110,7 +113,7 @@ int main(int argc, char **argv)
         }
         average /= static_cast<double>(output_elements);
 
-        std::cout << "ONNX Runtime: " << Ort::GetApi().GetVersionString() << "\n";
+        std::cout << "ONNX Runtime: " << OrtGetApiBase()->GetVersionString() << "\n";
         std::cout << "Input: " << input_name.get() << " [" << describe_shape(input_shape)
                   << "] float32\n";
         std::cout << "Output: " << output_name.get() << " [" << describe_shape(output_shape)
