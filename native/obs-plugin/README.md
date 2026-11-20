@@ -29,9 +29,25 @@ This folder is the starting point for a native OBS Studio plugin intended to wor
 - Keep mask work at Balanced-like resolution initially to preserve the performance gains observed in the browser prototype.
 - The original JS implementation remains a reference for effect controls and visual quality, not direct native source code.
 
+## GitHub Actions: Windows build for beginners
+
+The repository has a workflow named **Build CamLayer OBS plugin (Windows)** under `.github/workflows/build-native-windows.yml`. It uses the official OBS plugin template to supply its Windows build environment.
+
+1. Open https://github.com/RobertAhlin/camlayer/actions
+2. Select **Build CamLayer OBS plugin (Windows)** from the workflows list.
+3. Select **Run workflow**, choose the `main` branch, then select **Run workflow**.
+4. Open the new run. Green means the steps succeeded; red means we must inspect the failed step and fix the source or build configuration.
+5. After a successful run, open **Artifacts** and download `camlayer-obs-windows-x64-bootstrap`.
+
+The workflow also starts automatically after changes to `native/obs-plugin/` or to the workflow file itself.
+
+**Do not install the artifact yet.** The first output is a build-test of a pass-through filter, not a functioning AI background-removal plugin. Check with IT before attempting to load unsigned or custom DLL plugins on a managed PC.
+
+A GitHub Actions workflow may require enabling Actions in repository settings if disabled. It uses GitHub-hosted Windows build machines; nothing must be installed locally to trigger a build.
+
 ## Build and deployment
 
-This directory deliberately contains **no claim of a working Windows package**. Use the official OBS plugin template and compatible OBS/libobs SDK distribution to establish a reproducible build, first with CI on GitHub, then package a test build for a permitted machine. `find_package(libobs CONFIG REQUIRED)` needs an actual libobs CMake package path.
+This directory deliberately contains **no claim of a verified Windows package**. The GitHub workflow now attempts a Windows build using the official OBS plugin template; it has not yet been confirmed successful. First verify the build in CI, then test the binary on a permitted machine. `find_package(libobs CONFIG REQUIRED)` needs an actual libobs CMake package path.
 
 The target user's Windows computer is IT-managed and may prohibit installation, even for a compiled ZIP plugin. Obtain approval before copying plugins to protected OBS directories. GitHub Actions can build the code remotely, but cannot override local security policies.
 
