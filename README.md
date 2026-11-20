@@ -7,7 +7,7 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 **Visual quality reference:** Microsoft Teams. Comparable quality remains a target to evaluate, not a verified claim.
 
 **Live demo:** https://camlayer.vercel.app/  
-**Current code version:** v0.4.0  
+**Current code version:** v0.4.1  
 **Development status:** Working browser prototype with tested visual quality and timed stability diagnostics. v0.3.0 introduces experimental OBS Browser Source compatibility tests; OBS camera access is not yet verified.
 
 ## Current capabilities
@@ -94,6 +94,24 @@ camlayer/
 ```
 
 Current processing and UI logic are in `src/main.js`. Further modularization is a future improvement, not a prerequisite for testing.
+
+## v0.4.1: No-install Chrome Window Capture fallback
+
+If a locked-down PC does not allow Node.js or new applications, use:
+
+```text
+https://camlayer.vercel.app/?mode=chroma&resolution=1280&detail=balanced
+```
+
+1. Open the URL in Chrome (not OBS Browser Source). Click **Start camera**; Chrome can request camera access normally.
+2. Press **F11** to make Chrome full-screen. This output page is a camera cutout over a solid, vivid green screen with only small overlay controls.
+3. In OBS, add **Window Capture** and select the Chrome window. If Window Capture is blank, try a different Windows capture method available in OBS. Do not minimize the Chrome window.
+4. Add an OBS **Chroma Key** filter to the Window Capture source, with **Green** as the key color. Adjust Similarity and Smoothness conservatively to preserve hair and fingers.
+5. Crop out the tiny controls at the top if necessary, and place the resulting source above your chosen OBS background.
+
+No Node.js, npm, new browser extension or extra OBS plugin is needed. This approach is an **interim workaround**: OBS re-keys the already-separated image, so edge quality may be slightly worse than true alpha. The output is not an alpha transport, and Chrome must remain available for capture. Do not infer that OBS Browser Source camera permissions have changed.
+
+The existing localhost Node bridge remains an experimental option only on machines where installing/running Node is permitted.
 
 ## v0.4.0: Local OBS Bridge prototype
 
@@ -262,4 +280,4 @@ All source code, code comments, user-facing app strings, documentation, commit m
 
 **Project started:** November 4, 2026  
 **Last documented status:** November 20, 2026  
-**Next milestone:** Run the local bridge on Windows and verify live alpha output, frame rate, latency and reliability in OBS.
+**Next milestone:** Verify the no-install Chroma Output in Chrome + OBS Window Capture, then design a browser-only real-alpha transport that does not require local software installation.

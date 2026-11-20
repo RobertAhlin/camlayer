@@ -59,3 +59,24 @@ body.obs-mode.obs-debug .toolbar button{display:block}
 
 .bridge-status{padding:10px 13px;margin:12px 0 16px;border-radius:11px;background:#132e37;border:1px solid #255b62;font-size:12px;color:#a6e7e3;line-height:1.5}
 .bridge-status[hidden]{display:none}
+
+/* v0.4.1: no-install window-capture proof of concept.
+   Chrome owns the camera; OBS applies chroma key to this flat backdrop. */
+body.chroma-mode{background:#00ff00!important;overflow:hidden}
+body.chroma-mode .shell{width:100vw;height:100vh;max-width:none;padding:0}
+body.chroma-mode header,body.chroma-mode .hero,body.chroma-mode .bottom,body.chroma-mode .privacy{display:none}
+body.chroma-mode .views{display:block;width:100vw;height:100vh}
+body.chroma-mode .views>.panel:first-child{display:none}
+body.chroma-mode .views>.panel:last-child{border:0;border-radius:0;background:transparent;width:100%;height:100%}
+body.chroma-mode .panel-header{display:none}
+body.chroma-mode .stage{width:100vw;height:100vh;aspect-ratio:auto;background:#00ff00!important;background-image:none!important}
+body.chroma-mode .stage canvas{width:100%;height:100%;object-fit:contain}
+body.chroma-mode .stage .placeholder{display:none}
+body.chroma-mode .toolbar{position:fixed;z-index:20;top:8px;left:10px;margin:0;padding:8px;border-radius:10px;background:#13213ee6}
+body.chroma-mode .toolbar .field{display:none}
+body.chroma-mode .toolbar button{padding:8px 12px;min-height:35px;font-size:12px}
+body.chroma-mode .obs-message{display:none}
+body.chroma-mode .bridge-status{display:none}
+body.chroma-mode .chroma-help{position:fixed;z-index:19;right:12px;top:10px;max-width:52ch;padding:10px;border-radius:8px;background:#13213edb;color:white;font:12px/1.5 system-ui,sans-serif}
+body.chroma-mode:fullscreen .toolbar,body.chroma-mode:fullscreen .chroma-help{opacity:.04;transition:opacity .2s}
+body.chroma-mode:fullscreen .toolbar:hover,body.chroma-mode:fullscreen .chroma-help:hover{opacity:1}

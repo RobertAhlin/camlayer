@@ -4,6 +4,8 @@ import { BridgeSender } from '../bridge/sender.mjs';
 
 const params = new URLSearchParams(window.location.search);
 const OBS_MODE = params.get('mode') === 'obs';
+const CHROMA_MODE = params.get('mode') === 'chroma';
+document.body.classList.toggle('chroma-mode', CHROMA_MODE);
 const BRIDGE_MODE = params.get('mode') === 'bridge';
 const BRIDGE_TOKEN = BRIDGE_MODE ? params.get('token') : null;
 const IS_LOCAL_BRIDGE = BRIDGE_MODE && ['localhost', '127.0.0.1'].includes(window.location.hostname) && Boolean(BRIDGE_TOKEN);
@@ -24,7 +26,7 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.4.0</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.4.1</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
@@ -472,6 +474,22 @@ if (bridgeSender) {
   status('Bridge mode requires the local server URL and a valid session token.', 'error');
 }
 
+
+if (CHROMA_MODE) {
+  // In Chrome, use a flat chroma background behind the transparent canvas.
+  // Capture the Chrome window in OBS and remove the background with Chroma Key.
+  // The camera remains accessible to Chrome, not OBS embedded Chromium.
+  const requestedResolution = params.get('resolution');
+  if (requestedResolution === '640' || requestedResolution === '1280') qualitySelect.value = requestedResolution;
+  const requestedDetail = params.get('detail');
+  if (['fast', 'balanced', 'full'].includes(requestedDetail)) detailSelect.value = requestedDetail;
+  checkerInput.checked = false;
+  outputStage.classList.remove('checker');
+  const chromaHelp = document.createElement('aside');
+  chromaHelp.className = 'chroma-help';
+  chromaHelp.textContent = 'CamLayer Chroma Output · Start camera, then capture this Chrome window in OBS and apply Chroma Key (green). Press F11 for fullscreen.';
+  document.body.append(chromaHelp);
+}
 
 if (OBS_MODE) {
   // Browser Source has independent camera permissions and preferences.
