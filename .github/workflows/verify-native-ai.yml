@@ -60,6 +60,7 @@ jobs:
           $referenceUrl = 'https://raw.githubusercontent.com/safdar-hussain1/carmine/main/web/public/demo/model.jpg'
           New-Item -ItemType Directory -Force -Path 'results' | Out-Null
           Invoke-WebRequest -Uri $referenceUrl -OutFile 'results/portrait.jpg'
+          if ((Get-Item 'results/portrait.jpg').Length -lt 10000) { throw 'Reference image unexpectedly small.' }
           Add-Type -AssemblyName System.Drawing
           $source = [System.Drawing.Bitmap]::new((Resolve-Path 'results/portrait.jpg').Path)
           $dest = [System.Drawing.Bitmap]::new(256, 256, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
@@ -147,8 +148,8 @@ jobs:
           }
           Write-Host 'Reference portrait inference succeeded. PNG alpha mask is ready for visual review.'
 
-      - name: Upload probe results (not an OBS plugin)
-        if: success()
+      - name: Upload probe results and diagnostics (not an OBS plugin)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: camlayer-native-model-probe-windows
@@ -157,4 +158,5 @@ jobs:
             native/ai-probe/README.md
             results/portrait.jpg
             results/portrait-mask.png
+            results/portrait-mask.pgm
           retention-days: 7
