@@ -26,13 +26,13 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.4.1</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.4.2</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
       <label class="field">Processing resolution <select id="quality"><option value="640">640 × 360 · Fast</option><option value="1280">1280 × 720 · Quality</option></select></label>
       <label class="field">Mask detail <select id="mask-detail"><option value="balanced">Balanced · 640px</option><option value="full">Full · Original</option><option value="fast">Fast · 480px</option></select></label>
-      <button id="start">Start camera</button><button id="stop" class="secondary" disabled>Stop</button>
+      <button id="start">Start camera</button><button id="stop" class="secondary" disabled>Stop</button><button id="chroma-settings-toggle" class="secondary chroma-only" type="button" aria-expanded="false" aria-controls="chroma-settings">Adjust mask</button>
     </div>
     <p id="bridge-status" class="bridge-status" hidden></p>
     <div class="obs-message" id="obs-message" role="status" aria-live="polite"></div>
@@ -41,7 +41,7 @@ app.innerHTML = `
       <section class="panel"><div class="panel-header"><strong>Background removed</strong><span class="pill">ALPHA OUTPUT</span></div><div class="stage checker" id="output-stage"><canvas id="output"></canvas><div class="placeholder"><div class="mark">✦</div>AI output appears here</div></div></section>
     </div>
     <div class="bottom">
-      <section class="settings"><h2 class="section-title">Refine your image</h2><div class="sliders"><div class="setting"><label class="slider-label" for="threshold">Mask threshold <output id="threshold-value">0.35</output></label><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.35"></div><div class="setting"><label class="slider-label" for="softness">Edge softness <output id="softness-value">0.28</output></label><input id="softness" type="range" min="-2.00" max="2.00" step="0.01" value="0.28"></div><div class="setting"><label class="slider-label" for="cleanup">Edge cleanup <output id="cleanup-value">0.30</output></label><input id="cleanup" type="range" min="0" max="1" step="0.05" value="0.30"><p class="setting-help">Reduces mask noise and small artifacts before feathering. High values may remove fine details.</p></div><div class="setting"><label class="slider-label" for="stability">Edge stability <output id="stability-value">0.50</output></label><input id="stability" type="range" min="0" max="2.00" step="0.05" value="0.50"><p class="setting-help">Reduces static edge flicker while preserving faster response to larger movements.</p></div></div><label class="checkbox"><input id="checker" type="checkbox" checked> Show checkerboard behind the transparent output</label><label class="checkbox"><input id="stabilize" type="checkbox" checked> Stabilize mask between frames</label></section>
+      <section class="settings" id="chroma-settings"><div class="settings-heading"><h2 class="section-title">Refine your image</h2><button id="chroma-settings-close" class="secondary chroma-only" type="button">Hide controls</button></div><div class="sliders"><div class="setting"><label class="slider-label" for="threshold">Mask threshold <output id="threshold-value">0.35</output></label><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.35"></div><div class="setting"><label class="slider-label" for="softness">Edge softness <output id="softness-value">0.28</output></label><input id="softness" type="range" min="-2.00" max="2.00" step="0.01" value="0.28"></div><div class="setting"><label class="slider-label" for="cleanup">Edge cleanup <output id="cleanup-value">0.30</output></label><input id="cleanup" type="range" min="0" max="1" step="0.05" value="0.30"><p class="setting-help">Reduces mask noise and small artifacts before feathering. High values may remove fine details.</p></div><div class="setting"><label class="slider-label" for="stability">Edge stability <output id="stability-value">0.50</output></label><input id="stability" type="range" min="0" max="2.00" step="0.05" value="0.50"><p class="setting-help">Reduces static edge flicker while preserving faster response to larger movements.</p></div></div><label class="checkbox"><input id="checker" type="checkbox" checked> Show checkerboard behind the transparent output</label><label class="checkbox"><input id="stabilize" type="checkbox" checked> Stabilize mask between frames</label></section>
       <section class="metrics"><h2 class="section-title">Live performance</h2><div class="metric-grid"><div class="metric"><strong id="presented-fps">—</strong><span>Presented FPS</span></div><div class="metric"><strong id="fps">—</strong><span>Processed FPS</span></div><div class="metric"><strong id="latency">—</strong><span>Total processing (ms)</span></div><div class="metric"><strong id="dimensions">—</strong><span>Output size</span></div><div class="timing-breakdown" aria-label="Processing time breakdown"><div class="timing-row"><span>AI inference</span><strong id="inference-time">—</strong></div><div class="timing-row"><span>Mask processing</span><strong id="mask-time">—</strong></div><div class="timing-row"><span>Canvas rendering</span><strong id="canvas-time">—</strong></div><p class="timing-note">Smoothed milliseconds per processed frame. Includes mask extraction in mask processing; totals may include small additional overhead.</p></div><p class="cadence-info" id="cadence-info">Frame synchronization will be detected when the camera starts.</p><div class="stability-panel"><h3>Stability test</h3><div class="stability-actions"><label class="field">Duration <select id="test-duration"><option value="2">2 minutes</option><option value="5">5 minutes</option><option value="10" selected>10 minutes</option></select></label><button id="test-start" class="secondary" disabled>Start test</button><button id="test-stop" class="secondary" disabled>End test</button></div><p id="test-results" class="test-results" aria-live="polite">Start the camera to run a test. Keep this tab visible.</p></div></div><p id="status" class="status"><span class="dot"></span><span id="status-text">Ready to start. Camera permission is requested only after clicking Start.</span></p></section>
     </div><p class="privacy">Privacy first: webcam frames stay in this browser tab. Model and runtime files are downloaded from external hosts on first use. No recording, upload, or OBS integration is included in this build.</p>
   </div>`;
@@ -58,6 +58,8 @@ const qualitySelect = element('quality');
 const detailSelect = element('mask-detail');
 const startButton = element('start');
 const stopButton = element('stop');
+const chromaToggle = element('chroma-settings-toggle');
+const chromaClose = element('chroma-settings-close');
 const testStartButton = element('test-start');
 const testStopButton = element('test-stop');
 const testDurationSelect = element('test-duration');
@@ -436,6 +438,21 @@ function stop() {
 
 startButton.addEventListener('click', () => { void start(); });
 stopButton.addEventListener('click', stop);
+function showChromaSettings(visible) {
+  if (!CHROMA_MODE) return;
+  document.body.classList.toggle('chroma-settings-open', visible);
+  chromaToggle.setAttribute('aria-expanded', String(visible));
+  chromaToggle.textContent = visible ? 'Hide mask controls' : 'Adjust mask';
+}
+chromaToggle.addEventListener('click', () => {
+  showChromaSettings(!document.body.classList.contains('chroma-settings-open'));
+});
+chromaClose.addEventListener('click', () => showChromaSettings(false));
+window.addEventListener('keydown', (event) => {
+  if (CHROMA_MODE && event.key === 'Escape' && document.body.classList.contains('chroma-settings-open')) {
+    showChromaSettings(false);
+  }
+});
 testStartButton.addEventListener('click', () => {
   if (!running) return;
   frameTiming.startTest(performance.now(), Number(testDurationSelect.value));
@@ -487,7 +504,7 @@ if (CHROMA_MODE) {
   outputStage.classList.remove('checker');
   const chromaHelp = document.createElement('aside');
   chromaHelp.className = 'chroma-help';
-  chromaHelp.textContent = 'CamLayer Chroma Output · Start camera, then capture this Chrome window in OBS and apply Chroma Key (green). Press F11 for fullscreen.';
+  chromaHelp.textContent = 'CamLayer Chroma Output · Use Adjust mask to tune your cutout, then hide the controls before capturing in OBS. Press F11 for fullscreen.';
   document.body.append(chromaHelp);
 }
 

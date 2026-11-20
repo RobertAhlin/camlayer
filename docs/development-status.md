@@ -3,7 +3,7 @@
 **Last updated:** November 20, 2026  
 **Repository:** `RobertAhlin/camlayer`  
 **Deployed URL:** https://camlayer.vercel.app/  
-**Code version:** v0.4.1  
+**Code version:** v0.4.2  
 **Latest feature commit before this documentation update:** `a4220943d51bbd5e911f02bedcd69f27d0839ad6`  
 **Verification:** v0.2.7 measurements confirmed mask postprocessing as the primary bottleneck. The v0.2.8 detail modes are now verified to run in the browser, with a significant processing-speed improvement. Fine-detail motion tests remain open.
 
@@ -195,3 +195,7 @@ CamLayer v0.2.8 is in `main` after committing this documentation. The user demon
 ## v0.4.1: Windows managed-device workaround
 
 The user cannot install Node.js because their computer is IT-managed. Added `?mode=chroma`, which keeps the camera in Chrome and displays the alpha-composited person against a flat green backdrop. The OBS Window Capture source can then apply its built-in Chroma Key filter. This avoids installing any runtime, but necessarily re-keys the image instead of preserving the original alpha directly. The native camera pipeline and existing OBS modes are unchanged. **Manual testing pending.**
+
+## v0.4.2: Chroma Output mask controls
+
+After verifying the Chroma Output video can be captured by OBS, the user found that the hidden refinement controls prevented tuning out leftover scene fragments. Added an **Adjust mask** button to the Chrome Chroma Output page. It opens a temporary on-screen settings drawer with the original four sliders and stabilization setting. Close it with the new button or Escape before OBS capture. All preferences remain browser-local. Manual testing is pending.

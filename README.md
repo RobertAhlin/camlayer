@@ -7,7 +7,7 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 **Visual quality reference:** Microsoft Teams. Comparable quality remains a target to evaluate, not a verified claim.
 
 **Live demo:** https://camlayer.vercel.app/  
-**Current code version:** v0.4.1  
+**Current code version:** v0.4.2  
 **Development status:** Working browser prototype with tested visual quality and timed stability diagnostics. v0.3.0 introduces experimental OBS Browser Source compatibility tests; OBS camera access is not yet verified.
 
 ## Current capabilities
@@ -94,6 +94,15 @@ camlayer/
 ```
 
 Current processing and UI logic are in `src/main.js`. Further modularization is a future improvement, not a prerequisite for testing.
+
+## v0.4.2: adjustable mask in Chroma Output
+
+The Chroma Output view now includes an **Adjust mask** toggle beside Start and Stop. It opens the familiar Mask threshold, Edge softness, Edge cleanup, Edge stability and stabilization controls as a temporary overlay while the camera keeps running.
+
+- Tune the controls until unwanted background remnants disappear.
+- Click **Hide mask controls** or press **Escape** to close the overlay before recording or streaming in OBS.
+- Settings still persist in browser localStorage and apply to the normal CamLayer view.
+- Chrome Window Capture still includes any controls while visible, so always close the drawer before capturing a clean output.
 
 ## v0.4.1: No-install Chrome Window Capture fallback
 
