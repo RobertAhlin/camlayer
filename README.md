@@ -15,12 +15,12 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 
 The long-term deliverable is **CamLayer AI Background Removal**, a native OBS Studio video filter applied directly to a camera source. It must not require Chrome, green-screen chroma keying, a local Node.js server, or access to camera hardware from OBS's embedded browser.
 
-A first native **pass-through bootstrap** is now available in [native/obs-plugin](native/obs-plugin/README.md), with C source, CMake and English UI strings. Its only implemented behavior is to register an asynchronous video filter and return the input video frame unchanged. This is not yet tested with a compiler or OBS and **does not perform AI segmentation**.
+A first native **pass-through bootstrap** is now available in [native/obs-plugin](native/obs-plugin/README.md), with C source, CMake and English UI strings. Its first pass-through build compiled successfully on GitHub Actions. The next native milestone now adds a GPU-based ellipse alpha diagnostic; its updated build and actual OBS transparency still require verification. **AI segmentation is not yet implemented in the plugin.**
 
 Planned steps:
 
-1. Pin the OBS/libobs toolchain and build a Windows artifact in GitHub Actions.
-2. Test native filter registration and camera pass-through on a machine where plugins can be installed.
+1. Confirm the updated Windows build containing the GPU alpha diagnostic.
+2. Test native filter registration and true alpha transparency on a machine where plugins can be installed.
 3. Select and integrate a native-compatible segmentation runtime and model.
 4. Implement alpha compositing, port the edge controls and optimize latency/performance.
 5. Add packaging and distribution with a clear permissions/install procedure.
@@ -306,4 +306,4 @@ All source code, code comments, user-facing app strings, documentation, commit m
 
 **Project started:** November 4, 2026  
 **Last documented status:** November 20, 2026  
-**Next milestone:** Establish a reproducible native OBS plugin Windows build and verify that the pass-through filter registers, before integrating AI segmentation.
+**Next milestone:** Validate the GPU-based diagnostic ellipse in OBS, then replace the test geometry with native model inference and a real person mask.
