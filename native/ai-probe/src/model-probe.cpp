@@ -91,8 +91,8 @@ static size_t checked_element_count(const std::vector<int64_t> &shape)
 
 int main(int argc, char **argv)
 {
-    if (argc != 2) {
-        std::cerr << "Usage: camlayer-model-probe <model.onnx>\n";
+    if (argc != 2 && argc != 4) {
+        std::cerr << "Usage: camlayer-model-probe <model.onnx> [portrait.ppm output-mask.pgm]\n";
         return 2;
     }
 
@@ -178,6 +178,16 @@ int main(int argc, char **argv)
                   << "] float32\n";
         std::cout << "Output stats: min=" << minimum << " max=" << maximum
                   << " mean=" << average << "\n";
+        if (image_test) {
+            if (output_shape.size() != 4 || output_shape[0] != 1 ||
+                output_shape[1] != 1 || output_shape[2] != 256 || output_shape[3] != 256)
+                throw std::runtime_error("Expected a 1x1x256x256 mask.");
+            save_pgm_mask(argv[3], mask, output_elements, 256, 256);
+            std::cout << "Saved real-image mask: " << argv[3] << "\n";
+            if (maximum - minimum < 0.05f)
+                throw std::runtime_error("Reference portrait produced an almost constant mask.");
+            std::cout << "Real-image mask: PASS\n";
+        }
         std::cout << "CamLayer native model inference: PASS\n";
         return 0;
     } catch (const Ort::Exception &error) {
