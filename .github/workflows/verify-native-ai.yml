@@ -51,6 +51,49 @@ jobs:
           Write-Host "Verified pinned model SHA256: $modelHash"
           Get-FileHash -Algorithm SHA256 "deps/$ortPackage" | Format-List
 
+      - name: Prepare reference portrait (RGB 256x256)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Image used by Google's own MediaPipe selfie segmentation tests.
+          $referenceUrl = 'https://raw.githubusercontent.com/google-ai-edge/mediapipe/master/mediapipe/python/solutions/testdata/portrait.jpg'
+          New-Item -ItemType Directory -Force -Path 'results' | Out-Null
+          Invoke-WebRequest -Uri $referenceUrl -OutFile 'results/portrait.jpg'
+          Add-Type -AssemblyName System.Drawing
+          $source = [System.Drawing.Bitmap]::new((Resolve-Path 'results/portrait.jpg').Path)
+          $dest = [System.Drawing.Bitmap]::new(256, 256, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+          try {
+            $graphics = [System.Drawing.Graphics]::FromImage($dest)
+            try {
+              $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBilinear
+              $graphics.DrawImage($source, 0, 0, 256, 256)
+            } finally {
+              $graphics.Dispose()
+            }
+            $ppm = [System.IO.File]::Open('results/portrait.ppm', [System.IO.FileMode]::Create)
+            try {
+              $header = [System.Text.Encoding]::ASCII.GetBytes("P6`n256 256`n255`n")
+              $ppm.Write($header, 0, $header.Length)
+              $row = New-Object byte[] (256 * 3)
+              for ($y = 0; $y -lt 256; $y++) {
+                for ($x = 0; $x -lt 256; $x++) {
+                  $pixel = $dest.GetPixel($x, $y)
+                  $offset = $x * 3
+                  $row[$offset] = $pixel.R
+                  $row[$offset + 1] = $pixel.G
+                  $row[$offset + 2] = $pixel.B
+                }
+                $ppm.Write($row, 0, $row.Length)
+              }
+            } finally {
+              $ppm.Dispose()
+            }
+          } finally {
+            $dest.Dispose()
+            $source.Dispose()
+          }
+          Write-Host "Prepared reference portrait from upstream MediaPipe test data."
+
       - name: Compile native model probe (MSVC x64)
         shell: pwsh
         run: |
@@ -81,6 +124,27 @@ jobs:
           $exitCode = $LASTEXITCODE
           Write-Host ("Model probe exit code: {0} (0x{1:X8})" -f $exitCode, ([uint32]([int64]$exitCode -band 0xffffffffL)))
           if ($exitCode -ne 0) { throw "Native ONNX model inference test failed with code $exitCode" }
+          & ./camlayer-model-probe.exe 'models/selfie_segmentation.onnx' 'results/portrait.ppm' 'results/portrait-mask.pgm'
+          if ($LASTEXITCODE -ne 0) { throw "Real-image mask inference failed: $LASTEXITCODE" }
+          Add-Type -AssemblyName System.Drawing
+          $maskData = [System.IO.File]::ReadAllBytes('results/portrait-mask.pgm')
+          $header = [System.Text.Encoding]::ASCII.GetBytes("P5`n256 256`n255`n")
+          if ($maskData.Length -ne $header.Length + 256 * 256) {
+            throw "Invalid mask file size: $($maskData.Length)"
+          }
+          $maskBitmap = [System.Drawing.Bitmap]::new(256, 256)
+          try {
+            for ($y = 0; $y -lt 256; $y++) {
+              for ($x = 0; $x -lt 256; $x++) {
+                $v = [int]$maskData[$header.Length + $y * 256 + $x]
+                $maskBitmap.SetPixel($x, $y, [System.Drawing.Color]::FromArgb($v, $v, $v))
+              }
+            }
+            $maskBitmap.Save((Join-Path $pwd 'results/portrait-mask.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+          } finally {
+            $maskBitmap.Dispose()
+          }
+          Write-Host 'Reference portrait inference succeeded. PNG alpha mask is ready for visual review.'
 
       - name: Upload probe results (not an OBS plugin)
         if: success()
@@ -90,4 +154,6 @@ jobs:
           path: |
             camlayer-model-probe.exe
             native/ai-probe/README.md
+            results/portrait.jpg
+            results/portrait-mask.png
           retention-days: 7
