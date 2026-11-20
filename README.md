@@ -7,8 +7,8 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 **Visual quality reference:** Microsoft Teams. Comparable quality remains a target to evaluate, not a verified claim.
 
 **Live demo:** https://camlayer.vercel.app/  
-**Current code version:** v0.2.9  
-**Development status:** Working browser prototype. v0.2.8 real-camera tests showed substantial mask-processing gains. v0.2.9 adds distinct-frame scheduling and a timed stability test; live verification is pending.
+**Current code version:** v0.3.0  
+**Development status:** Working browser prototype with tested visual quality and timed stability diagnostics. v0.3.0 introduces experimental OBS Browser Source compatibility tests; OBS camera access is not yet verified.
 
 ## Current capabilities
 
@@ -69,6 +69,7 @@ The repository's `vercel.json` configures a static website without an installati
 ```text
 camlayer/
 ├── README.md
+├── obs-test.html
 ├── index.html
 ├── vercel.json
 ├── .gitignore
@@ -87,6 +88,21 @@ camlayer/
 ```
 
 Current processing and UI logic are in `src/main.js`. Further modularization is a future improvement, not a prerequisite for testing.
+
+## v0.3.0: experimental OBS Browser Source compatibility
+
+The first OBS experiment has two independent checks:
+
+1. **Transparency test (no webcam):** add `https://camlayer.vercel.app/obs-test.html` as an OBS Browser Source. The area outside the visible test shapes should show your OBS scene beneath.
+2. **Camera permission and alpha output test:** add `https://camlayer.vercel.app/?mode=obs&resolution=1280&detail=balanced` as an OBS Browser Source, using 1280 × 720 width/height. If OBS's embedded Chromium/CEF allows access to the selected camera, CamLayer attempts to start and outputs only the transparent video canvas, with no UI or checkerboard.
+
+If the OBS camera source does not start, test `https://camlayer.vercel.app/?mode=obs&debug=1&resolution=1280&detail=balanced`, then right-click the Browser Source and choose **Interact** to inspect error messages and use the visible start/stop controls. The debug mode is temporary and should not be used in production scenes.
+
+**Important:** These are compatibility experiments, not a completed OBS integration. OBS Browser Source camera permissions may block `getUserMedia` even when it works in Chrome. If that happens, do not assume a webcam or MediaPipe failure; the next architecture should use a separate browser processing process and a tested local transfer method or a native OBS plugin.
+
+The normal `https://camlayer.vercel.app/` UI remains unchanged, including Balanced as the default mask detail. OBS URLs request 1280 × 720 and Balanced by default; no separate build step or backend is introduced.
+
+OBS Browser Source settings to start with: **Width: 1280, Height: 720**. Do not add the original webcam as a competing source while testing camera capture, because driver sharing may vary.
 
 ## v0.2.9: one processing pass per presented video frame
 
@@ -199,4 +215,4 @@ All source code, code comments, user-facing app strings, documentation, commit m
 
 **Project started:** November 4, 2026  
 **Last documented status:** November 20, 2026  
-**Next milestone:** Verify v0.2.9 frame timing and run a 10-minute stability test, then test OBS integration feasibility.
+**Next milestone:** Test the OBS transparency page and then the camera OBS Browser Source experiment. Choose an integration architecture based on the actual permission results.

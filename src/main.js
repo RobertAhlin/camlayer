@@ -1,6 +1,12 @@
 import { MaskProcessor } from './mask-processor.mjs';
 import { FrameTiming } from './frame-timing.mjs';
 
+const params = new URLSearchParams(window.location.search);
+const OBS_MODE = params.get('mode') === 'obs';
+const OBS_DEBUG = OBS_MODE && params.get('debug') === '1';
+document.body.classList.toggle('obs-mode', OBS_MODE);
+document.body.classList.toggle('obs-debug', OBS_DEBUG);
+
 const MEDIAPIPE_MODULE_URLS = [
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs',
   'https://unpkg.com/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs'
@@ -14,7 +20,7 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.9</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.3.0</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
@@ -22,6 +28,7 @@ app.innerHTML = `
       <label class="field">Mask detail <select id="mask-detail"><option value="balanced">Balanced · 640px</option><option value="full">Full · Original</option><option value="fast">Fast · 480px</option></select></label>
       <button id="start">Start camera</button><button id="stop" class="secondary" disabled>Stop</button>
     </div>
+    <div class="obs-message" id="obs-message" role="status" aria-live="polite"></div>
     <div class="views">
       <section class="panel"><div class="panel-header"><strong>Original camera</strong><span class="pill">INPUT</span></div><div class="stage" id="original-stage"><video id="video" autoplay playsinline muted></video><div class="placeholder"><div class="mark">◉</div>Camera preview appears here</div></div></section>
       <section class="panel"><div class="panel-header"><strong>Background removed</strong><span class="pill">ALPHA OUTPUT</span></div><div class="stage checker" id="output-stage"><canvas id="output"></canvas><div class="placeholder"><div class="mark">✦</div>AI output appears here</div></div></section>
@@ -134,6 +141,12 @@ function saveSettings() {
 function status(message, state = 'idle') {
   element('status').className = `status ${state}`;
   element('status-text').textContent = message;
+  if (OBS_MODE) {
+    const banner = element('obs-message');
+    banner.textContent = message;
+    banner.classList.toggle('error', state === 'error');
+    banner.classList.toggle('visible', state === 'error' || OBS_DEBUG);
+  }
 }
 
 function setControls(active) {
@@ -439,3 +452,17 @@ window.addEventListener('pagehide', () => {
   segmenter?.close();
 });
 if (navigator.mediaDevices?.enumerateDevices) void listCameras();
+
+if (OBS_MODE) {
+  // Browser Source has independent camera permissions and preferences.
+  // The source URL can override resolution and detail without relying on Chrome storage.
+  const resolution = params.get('resolution');
+  if (resolution === '640' || resolution === '1280') qualitySelect.value = resolution;
+  const detail = params.get('detail');
+  if (detail && ['fast', 'balanced', 'full'].includes(detail)) detailSelect.value = detail;
+  checkerInput.checked = false;
+  outputStage.classList.remove('checker');
+  // OBS may deny access to getUserMedia; the source then shows an error banner.
+  // The optional debug mode exposes a manual start button for source interaction.
+  void start();
+}

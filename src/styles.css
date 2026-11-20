@@ -38,3 +38,21 @@ button{border:0;border-radius:11px;padding:12px 19px;color:#0d1530;background:#8
 .stability-actions button{font-size:12px;min-height:44px;padding:10px 13px}
 .test-results{font-size:12px;line-height:1.65;color:#b9c8de;margin:12px 0 0}
 @media(max-width:560px){.stability-actions .field,.stability-actions .field select{width:100%;max-width:none}.stability-actions button{flex:1}}
+
+/* v0.3.0 OBS browser-source compatibility experiment */
+html:has(body.obs-mode),body.obs-mode{background:transparent!important;margin:0;overflow:hidden}
+body.obs-mode .shell{padding:0;width:100vw;height:100vh;max-width:none}
+body.obs-mode header,body.obs-mode .hero,body.obs-mode .toolbar,body.obs-mode .bottom,body.obs-mode .privacy{display:none}
+body.obs-mode .views{display:block;height:100vh}
+body.obs-mode .views>.panel:first-child{display:none}
+body.obs-mode .views>.panel:last-child{height:100%;border:0;border-radius:0;background:transparent}
+body.obs-mode .panel-header{display:none}
+body.obs-mode .stage{width:100vw;height:100vh;aspect-ratio:auto;background:transparent!important;background-image:none!important}
+body.obs-mode .stage canvas{height:100%;width:100%;object-fit:contain}
+body.obs-mode .placeholder{display:none}
+body.obs-mode .obs-message{display:none;position:fixed;z-index:100;left:12px;bottom:12px;max-width:min(600px,calc(100vw - 24px));background:#152039f0;color:white;border:1px solid #526681;border-radius:9px;padding:12px;font:13px/1.4 system-ui,sans-serif;pointer-events:none}
+body.obs-mode .obs-message.visible{display:block}
+body.obs-mode .obs-message.error{border-color:#e68194}
+body.obs-mode.obs-debug .toolbar{display:flex;position:fixed;z-index:101;left:12px;top:12px;padding:12px;background:#152039ed;border-radius:10px;max-width:calc(100vw - 24px)}
+body.obs-mode.obs-debug .toolbar .field{display:none}
+body.obs-mode.obs-debug .toolbar button{display:block}

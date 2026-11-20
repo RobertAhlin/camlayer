@@ -3,7 +3,7 @@
 **Last updated:** November 20, 2026  
 **Repository:** `RobertAhlin/camlayer`  
 **Deployed URL:** https://camlayer.vercel.app/  
-**Code version:** v0.2.9  
+**Code version:** v0.3.0  
 **Last implementation commit before this documentation update:** `bba74d7691f071bf3ba1cdec762281dca0f857d0`  
 **Verification:** v0.2.7 measurements confirmed mask postprocessing as the primary bottleneck. The v0.2.8 detail modes are now verified to run in the browser, with a significant processing-speed improvement. Fine-detail motion tests remain open.
 
@@ -128,18 +128,29 @@ Balanced reduced mask processing from 45.9 to 10.4 ms compared with Full in thes
 
 **Verification outstanding:** Confirm v0.2.9 startup, callback behavior, camera FPS labels and at least one complete stability test in the browser. A lower processed FPS than the previous 50.3 figure is expected if that figure included repeated video frames.
 
+## v0.3.0: first OBS Browser Source integration experiment
+
+- Added `obs-test.html`, a camera-free alpha compatibility test.
+- Added `?mode=obs` to the existing application; hides the normal UI and checkerboard while rendering only the transparent output canvas.
+- Added optional source URL settings for capture resolution and mask detail.
+- Added `?mode=obs&debug=1` for visible error status and camera controls through OBS Interact.
+- The OBS mode attempts camera startup, but permission support in OBS embedded Chromium has **not** been verified.
+- Kept the existing browser application, selected model and Balanced default intact.
+
+**Next test:** In OBS create a Browser Source for `/obs-test.html`, confirm that its background is truly transparent, then test the `?mode=obs` source. If camera permissions fail, investigate a local browser-to-OBS transfer path before committing to a native plugin.
+
 ## Current stop point
 
 CamLayer v0.2.8 is in `main` after committing this documentation. The user demonstrated the v0.2.7 performance breakdown; v0.2.8 still needs a real-camera comparison.
 
 ### Next actions
 
-1. Confirm the deployed version label reads v0.2.9.
-2. Use the 1280 × 720 camera mode and Balanced mask detail.
-3. Verify Presented FPS and Processed FPS represent new video frames, not animation repaint cycles.
-4. Run a 2-minute test first to check controls, then run a 10-minute test while keeping the tab visible.
-5. Record average FPS, mean/worst processing time, skipped frames, long gaps and any visible stutter during head/hand motion.
-6. If timing is stable, move to an initial OBS compatibility test without changing the segmentation model.
+1. Confirm Vercel displays the v0.3.0 release.
+2. Create an OBS Browser Source from `https://camlayer.vercel.app/obs-test.html` and confirm transparency over a colored background.
+3. Create a second OBS Browser Source from `https://camlayer.vercel.app/?mode=obs&resolution=1280&detail=balanced`, 1280 × 720.
+4. If the camera source is blank, test the `&debug=1` URL via OBS Interact and capture the exact permission/error message.
+5. If camera access succeeds, verify the alpha channel, moving hands, and usable FPS under OBS load. If it fails, compare alternative local transfer architectures.
+6. Do not characterize the browser-source experiment as a working OBS plugin until it has been validated.
 
 ## Planned investigations after stabilization
 

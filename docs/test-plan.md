@@ -1,7 +1,19 @@
 # CamLayer Test Plan
 
-**Next target:** v0.2.9 frame-cadence and 10-minute stability test.  
+**Next target:** v0.3.0 OBS Browser Source compatibility experiment.  
 **Purpose:** Verify the new mask detail modes against the v0.2.7 measurements, with emphasis on preserved fine detail and signed edge behavior.
+
+## OBS compatibility steps
+
+1. In OBS add a colored background source for reference.
+2. Add a Browser Source using `https://camlayer.vercel.app/obs-test.html`, width 1280 and height 720. Confirm the colored background remains visible outside the floating test shapes.
+3. Add another Browser Source using `https://camlayer.vercel.app/?mode=obs&resolution=1280&detail=balanced`, again 1280 × 720.
+4. Confirm camera permission and alpha output if supported. Ensure the webcam is not already locked by an OBS Video Capture source.
+5. If blank, change the source URL to include `&debug=1`, right-click the Browser Source and choose Interact, and record the exact error message.
+6. If camera access fails, record that as a Browser Source limitation and evaluate alternative local integration approaches; do not fake alpha with a black background or claim success without a working feed.
+7. Test streaming/recording overhead, transparency, and image quality only after actual OBS camera access succeeds.
+
+**Status:** No OBS integration test has been completed in the target environment yet.
 
 ## Test setup
 

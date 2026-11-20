@@ -1,6 +1,6 @@
 # Current Architecture
 
-**As implemented in v0.2.9.** This describes the working browser prototype, not a completed OBS plugin.
+**As implemented in v0.3.0.** This describes the working browser prototype, not a completed OBS plugin.
 
 ## Data flow
 
@@ -96,3 +96,11 @@ The callback is re-registered after processing. If processing takes too long, th
 A limited fallback checks `getVideoPlaybackQuality().totalVideoFrames` where available, otherwise uses a throttled animation frame loop. The final fallback is inherently approximate and is labeled as such.
 
 The rolling three-second Presented FPS and Processed FPS counters are independent of the smoothed inference/mask/canvas processing timings. A 2/5/10 minute test accumulates average and peak processing duration, skipped presented frames, and callback gaps over the full run. No media frames are retained by the test. Results remain local to the open tab and are qualified if the page is hidden.
+
+## OBS Browser Source experiment (v0.3.0)
+
+The existing application now accepts `?mode=obs`: CSS hides the main UI, original video preview, controls, checkerboard and diagnostic panels while retaining the processed transparent alpha canvas. The Browser Source URL may specify `resolution=1280|640` and `detail=fast|balanced|full`. Debug mode (`debug=1`) shows status messages and manual controls for OBS Interact.
+
+An independent `obs-test.html` page exposes translucent and opaque shapes against a truly transparent CSS background. This page does not request camera permission and should be tested first to isolate transparency behavior.
+
+The OBS embedded browser has its own permission model and device context, which may prevent `getUserMedia`. A visual alpha test alone cannot establish webcam compatibility. This architecture does not yet implement an external-browser bridge, inter-process frame transfer or native plugin.
