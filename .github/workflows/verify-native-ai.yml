@@ -68,9 +68,19 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:PATH = "$pwd/deps/onnxruntime/runtimes/win-x64/native;$env:PATH"
+          $native = 'deps/onnxruntime/runtimes/win-x64/native'
+          # Windows loads native dependencies most reliably beside the executable.
+          Copy-Item "$native/onnxruntime.dll" './onnxruntime.dll' -Force
+          Get-ChildItem "$native/*.dll" | ForEach-Object {
+            Copy-Item $_.FullName -Destination '.' -Force
+          }
+          $env:PATH = "$(Resolve-Path $native);$env:PATH"
+          Write-Host 'Bundled native dependencies:'
+          Get-ChildItem '*.dll' | Select-Object Name, Length | Format-Table -AutoSize
           & ./camlayer-model-probe.exe 'models/selfie_segmentation.onnx'
-          if ($LASTEXITCODE -ne 0) { throw 'Native ONNX model inference test failed.' }
+          $exitCode = $LASTEXITCODE
+          Write-Host ("Model probe exit code: {0} (0x{1:X8})" -f $exitCode, ([uint32]([int64]$exitCode -band 0xffffffffL)))
+          if ($exitCode -ne 0) { throw "Native ONNX model inference test failed with code $exitCode" }
 
       - name: Upload probe results (not an OBS plugin)
         if: success()
