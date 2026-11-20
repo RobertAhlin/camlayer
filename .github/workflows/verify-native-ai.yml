@@ -55,8 +55,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Image used by Google's own MediaPipe selfie segmentation tests.
-          $referenceUrl = 'https://raw.githubusercontent.com/google-ai-edge/mediapipe/master/mediapipe/python/solutions/testdata/portrait.jpg'
+          # Public demo portrait; photographer Andrea Piacquadio, Pexels License.
+          # The upstream MediaPipe test references a portrait not distributed in its current public repository.
+          $referenceUrl = 'https://raw.githubusercontent.com/safdar-hussain1/carmine/main/web/public/demo/model.jpg'
           New-Item -ItemType Directory -Force -Path 'results' | Out-Null
           Invoke-WebRequest -Uri $referenceUrl -OutFile 'results/portrait.jpg'
           Add-Type -AssemblyName System.Drawing
@@ -92,7 +93,7 @@ jobs:
             $dest.Dispose()
             $source.Dispose()
           }
-          Write-Host "Prepared reference portrait from upstream MediaPipe test data."
+          Write-Host "Prepared licensed portrait for native segmentation quality check."
 
       - name: Compile native model probe (MSVC x64)
         shell: pwsh
