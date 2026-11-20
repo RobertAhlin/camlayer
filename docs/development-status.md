@@ -208,3 +208,18 @@ Following the successful browser prototype and limited OBS Chroma Output integra
 Created `native/obs-plugin/` with an initial CMake build definition, C filter registration, and English locale strings. The first stage is explicitly a **pass-through filter**, not an AI background remover. No Windows binary has been built or tested. The next milestone is to establish a pinned Windows CI build and verify filter loading before porting segmentation.
 
 The target workstation does not allow installation of Node.js and may restrict OBS plugin installation. GitHub-hosted builds are proposed, but installing a resulting plugin must still comply with IT policy.
+
+## Native OBS GPU alpha diagnostic (November 20, 2026)
+
+After the initial native Windows pass-through build produced a DLL and locale files in GitHub Actions run #2, the next implementation milestone is the alpha rendering path.
+
+- Native filter switched from asynchronous CPU video manipulation to OBS's supported graphics filter pathway.
+- Added `data/ellipse_alpha.effect` as an optional ellipse-shaped alpha diagnostic, rendered with a GPU shader.
+- Extended UI with `Diagnostic transparency test (ellipse)` toggle.
+- Updated the Windows GitHub Actions workflow to bundle the shader with the compiled module.
+- Kept Mask threshold, Edge softness, Edge cleanup and Edge stability controls as **placeholders** until native model inference exists.
+- The diagnostic renders a geometric oval, **not a person mask**.
+
+**Validation required:** Wait for the current Windows GitHub Actions run, inspect the built artifact for `bin/64bit/camlayer-obs.dll` and `data/ellipse_alpha.effect`, then test in OBS on a machine where plugin installation is permitted. If the shader fails to load, review the OBS log rather than attributing it to AI inference.
+
+**Next AI design decision:** Select a native-compatible model execution runtime and validate that the browser model or an equivalent segmentation model can be distributed and run offline with suitable CPU/GPU performance. The JavaScript MediaPipe runtime cannot simply be linked into the native C plugin.
