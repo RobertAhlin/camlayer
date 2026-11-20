@@ -3,7 +3,8 @@
 **Last updated:** November 20, 2026  
 **Repository:** `RobertAhlin/camlayer`  
 **Deployed URL:** https://camlayer.vercel.app/  
-**Code version:** v0.4.2  
+**Browser version:** v0.4.2  
+**Native plugin status:** initial C/CMake scaffold, not yet compiled  
 **Latest feature commit before this documentation update:** `a4220943d51bbd5e911f02bedcd69f27d0839ad6`  
 **Verification:** v0.2.7 measurements confirmed mask postprocessing as the primary bottleneck. The v0.2.8 detail modes are now verified to run in the browser, with a significant processing-speed improvement. Fine-detail motion tests remain open.
 
@@ -199,3 +200,11 @@ The user cannot install Node.js because their computer is IT-managed. Added `?mo
 ## v0.4.2: Chroma Output mask controls
 
 After verifying the Chroma Output video can be captured by OBS, the user found that the hidden refinement controls prevented tuning out leftover scene fragments. Added an **Adjust mask** button to the Chrome Chroma Output page. It opens a temporary on-screen settings drawer with the original four sliders and stabilization setting. Close it with the new button or Escape before OBS capture. All preferences remain browser-local. Manual testing is pending.
+
+## Native OBS plugin direction (November 20, 2026)
+
+Following the successful browser prototype and limited OBS Chroma Output integration, the project focus is now a **native OBS video filter** attached directly to a Video Capture Device source.
+
+Created `native/obs-plugin/` with an initial CMake build definition, C filter registration, and English locale strings. The first stage is explicitly a **pass-through filter**, not an AI background remover. No Windows binary has been built or tested. The next milestone is to establish a pinned Windows CI build and verify filter loading before porting segmentation.
+
+The target workstation does not allow installation of Node.js and may restrict OBS plugin installation. GitHub-hosted builds are proposed, but installing a resulting plugin must still comply with IT policy.
