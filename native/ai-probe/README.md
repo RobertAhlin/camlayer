@@ -6,15 +6,21 @@ This is a **Windows ONNX Runtime smoke test**, not an OBS plugin and not yet liv
 
 CamLayer already has a native GPU alpha-rendering test inside OBS. Before replacing the diagnostic ellipse with a real AI mask, we must confirm that a compatible person segmentation model runs with native Windows C++ code.
 
-The standalone command-line probe:
+The standalone command-line probe (now with a real-image mode):
 1. Loads a pinned ONNX version of the MediaPipe Selfie Segmentation model.
 2. Uses the official ONNX Runtime Windows x64 CPU package.
 3. Validates the input tensor type and dimensions.
 4. Executes one inference using an artificial constant-value image.
 5. Validates that the output tensor consists of finite float32 values.
 6. Reports model tensor names, shapes, output minimum/maximum/average and ONNX Runtime version.
+7. Processes a real, resized portrait as planar RGB floats in [0,1] and saves a grayscale `portrait-mask.png` artifact.
+8. Rejects real-image masks that are effectively constant rather than indicating foreground and background.
 
-No camera access, video frames, or user data are used. The synthetic input is **not a visual-quality evaluation**.
+No camera access or user data are used. The original synthetic input is **not a visual-quality evaluation**. The added real-image fixture permits a first visual inspection only, not a reliable benchmark.
+
+Reference portrait: [safdar-hussain1/carmine](https://github.com/safdar-hussain1/carmine/blob/main/web/public/demo/model.jpg), credited by its project to photographer **Andrea Piacquadio / Pexels** under the Pexels License. Downloaded only for the CI test and not distributed in the CamLayer repository.
+
+The exported mask is 256 × 256 pixels with white representing foreground confidence and black background confidence. Review `portrait.jpg` alongside `portrait-mask.png` in the run's Artifacts; this confirms broad segmentation behavior but not hair quality, edge precision, or real-time latency.
 
 ## GitHub Actions
 
@@ -22,7 +28,7 @@ Workflow: [Verify CamLayer Native AI Model (Windows)](../../.github/workflows/ve
 
 Open **Actions**, select the workflow and examine the latest run. The workflow is also triggered automatically when the probe or workflow changes.
 
-A green result means the model can be loaded and run on the hosted Windows machine. It **does not** mean background removal is active in OBS. A red result requires checking the failing step; no installation is required locally.
+A green result now means the model can be loaded and run on the hosted Windows machine, and the reference portrait produces a nonconstant mask. Inspect the PNG to confirm that its light regions actually follow the person. It **does not** mean background removal is active in OBS. A red result requires checking the failing step; no installation is required locally.
 
 ## Model source and provenance
 
@@ -34,13 +40,13 @@ A green result means the model can be loaded and run on the hosted Windows machi
 - Runtime: official Microsoft.ML.OnnxRuntime NuGet package version `1.24.2`, containing Windows x64 native binaries and C++ headers. Its redistribution/license conditions must also be included in any package.
 - The original workflow incorrectly targeted a non-existent GitHub release ZIP for this version and failed with HTTP 404. The download source has been corrected to the official NuGet package; a new successful build still needs confirmation.
 
-The workflow downloads the model from Hugging Face and the runtime from GitHub on the build runner. **The Windows workstation does not need to download or install development tools.** This smoke test does not publish a distributable ONNX runtime or OBS package.
+The workflow downloads the model from Hugging Face, ONNX Runtime from NuGet, and the public portrait from GitHub on the build runner. **The Windows workstation does not need to download or install development tools.** This smoke test does not publish a distributable ONNX runtime or OBS package.
 
 ## What comes next
 
 After a confirmed passing inference test:
 
-1. Establish the model's exact preprocessing and output activation semantics using a reference image and visual comparison.
+1. Review the reference-image alpha mask, confirm channel order and output activation, and measure segmentation quality against the web prototype.
 2. Implement a native inference wrapper and model lifecycle, independent of OBS rendering.
 3. Capture an OBS source frame safely at reduced mask resolution without blocking the graphics thread for inference.
 4. Feed the resulting mask into the existing GPU alpha shader rather than replacing the working graphics filter.
