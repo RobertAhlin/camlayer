@@ -1,7 +1,21 @@
 # CamLayer Test Plan
 
-**Next target:** v0.3.0 OBS Browser Source compatibility experiment.  
+**Next target:** v0.4.0 Local OBS Bridge manual compatibility experiment.  
 **Purpose:** Verify the new mask detail modes against the v0.2.7 measurements, with emphasis on preserved fine detail and signed edge behavior.
+
+## v0.4.0 local bridge test
+
+1. Clone or pull the repository on the Windows test computer.
+2. Run `cd bridge`, then `npm install`, then `npm start` with Node.js 20+.
+3. Keep the terminal open; copy the printed Chrome sender URL into Chrome.
+4. Start CamLayer with the desired camera, 1280 × 720 and Balanced detail.
+5. In OBS add a Browser Source using the server's printed receiver URL, width 1280, height 720.
+6. Verify the person appears over a background with real transparency and that both camera movement and output stay live.
+7. Stop the sender: the OBS output should clear. Start again to verify recovery.
+8. Measure OBS output latency, CPU utilization, FPS, flicker and fine edges; record the findings.
+9. If blank, add `&debug=1` to the receiver URL and inspect the local server logs.
+
+**Status:** This prototype has not yet been validated on the user's Windows/OBS installation. No webcam images leave the local server.
 
 ## OBS compatibility steps
 
