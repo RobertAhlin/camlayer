@@ -1,11 +1,11 @@
 # CamLayer Test Plan
 
-**Next target:** v0.2.6 on the Windows / Intel Iris Xe development machine.  
-**Purpose:** Confirm performance recovery and preserve directional edge quality after optimization.
+**Next target:** v0.2.7 on the Windows / Intel Iris Xe development machine.  
+**Purpose:** Measure inference, mask processing, and canvas rendering separately to locate the bottleneck while preserving edge quality.
 
 ## Test setup
 
-1. Check that Vercel published v0.2.6 from `main`, then hard-refresh the page.
+1. Check that Vercel published v0.2.7 from `main`, then hard-refresh the page.
 2. Close other camera-using applications if they interfere with access.
 3. Use the same physical webcam, camera angle, background, and lighting for every comparison.
 4. Select `1280 × 720` and confirm the actual output size shown.
@@ -27,7 +27,7 @@ Start with the last known slow configuration:
 
 The earlier version showed **7.7 FPS / 144 ms** in one screenshot. This baseline is illustrative; a meaningful comparison requires matching camera and scene.
 
-Then test softness `0.00` and `+1.14` while holding all other values constant.
+Then test softness `0.00` and `+1.14` while holding all other values constant. Record all three stage timings and total processing time at every setting; also compare `640 × 360` with `1280 × 720`.
 
 ## Visual scenarios
 
@@ -44,7 +44,7 @@ Then test softness `0.00` and `+1.14` while holding all other values constant.
 
 | Version | Camera | Output | Threshold | Softness | Cleanup | Stability | FPS range | Processing ms | Observations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| v0.2.6 | TBD | 1280 × 720 | 0.50 | −1.14 | 0.55 | 1.80 | TBD | TBD | Not yet tested |
+| v0.2.7 | TBD | 1280 × 720 | 0.50 | −1.14 | 0.55 | 1.80 | TBD | TBD | Not yet tested |
 
 ## Pass criteria for continued work
 
@@ -55,7 +55,7 @@ Then test softness `0.00` and `+1.14` while holding all other values constant.
 - Frame processing is improved compared with the v0.2.5 slowdown at matching settings.
 - Any residual slowness is measured and documented before new visual features are added.
 
-**No pass or fail result has been recorded for v0.2.6 yet.**
+**About 15 FPS was reported for v0.2.6, without per-stage timings. No pass or fail result has been recorded for the new v0.2.7 diagnostics.**
 
 ## Later OBS test questions
 

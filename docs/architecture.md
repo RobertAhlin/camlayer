@@ -1,6 +1,6 @@
 # Current Architecture
 
-**As implemented in v0.2.6.** This describes the working browser prototype, not a completed OBS plugin.
+**As implemented in v0.2.7.** This describes the working browser prototype, not a completed OBS plugin.
 
 ## Data flow
 
@@ -33,7 +33,7 @@ The app selects the second confidence mask for multi-channel models or the first
 ## Implementation files
 
 - `index.html`: application entry point and resource links.
-- `src/main.js`: UI, stored settings, webcam lifecycle, MediaPipe loading, segmentation, postprocessing, and rendering.
+- `src/main.js`: UI, stored settings, webcam lifecycle, MediaPipe loading, segmentation, postprocessing, rendering, and per-stage timing.
 - `src/styles.css`: responsive application styling.
 - `vercel.json`: static hosting configuration.
 - `README.md`: project overview.
@@ -66,6 +66,8 @@ Settings are stored in `localStorage` under `camlayer.settings.v2`. Existing sav
 ## Current performance considerations
 
 The model is configured with CPU inference, despite logs that may mention graphics initialization. The measured `Inference + render` timer covers `segmentForVideo` plus mask processing and canvas composition; it is not an end-to-end camera latency measurement.
+
+Version v0.2.7 instruments the pipeline with `performance.now()` around MediaPipe inference, confidence-mask extraction and postprocessing, and canvas rendering. Results are smoothed and displayed at approximately 350 ms intervals. These timers measure synchronous main-thread wall time, not GPU activity or CPU-core/thread utilization.
 
 Version v0.2.5 added min/max morphology with radius-dependent nested loops and caused a major observed slowdown in one 720p test. Version v0.2.6 replaces these loops with separable sliding-window extrema and reuses the queue buffer, aiming for runtime proportional to mask pixel count rather than radius times pixel count.
 

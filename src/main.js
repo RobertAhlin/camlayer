@@ -11,7 +11,7 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.6</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.7</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
@@ -24,7 +24,7 @@ app.innerHTML = `
     </div>
     <div class="bottom">
       <section class="settings"><h2 class="section-title">Refine your image</h2><div class="sliders"><div class="setting"><label class="slider-label" for="threshold">Mask threshold <output id="threshold-value">0.35</output></label><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.35"></div><div class="setting"><label class="slider-label" for="softness">Edge softness <output id="softness-value">0.28</output></label><input id="softness" type="range" min="-2.00" max="2.00" step="0.01" value="0.28"></div><div class="setting"><label class="slider-label" for="cleanup">Edge cleanup <output id="cleanup-value">0.30</output></label><input id="cleanup" type="range" min="0" max="1" step="0.05" value="0.30"><p class="setting-help">Reduces mask noise and small artifacts before feathering. High values may remove fine details.</p></div><div class="setting"><label class="slider-label" for="stability">Edge stability <output id="stability-value">0.50</output></label><input id="stability" type="range" min="0" max="2.00" step="0.05" value="0.50"><p class="setting-help">Reduces static edge flicker while preserving faster response to larger movements.</p></div></div><label class="checkbox"><input id="checker" type="checkbox" checked> Show checkerboard behind the transparent output</label><label class="checkbox"><input id="stabilize" type="checkbox" checked> Stabilize mask between frames</label></section>
-      <section class="metrics"><h2 class="section-title">Live performance</h2><div class="metric-grid"><div class="metric"><strong id="fps">—</strong><span>Processing FPS</span></div><div class="metric"><strong id="latency">—</strong><span>Inference + render (ms)</span></div><div class="metric"><strong id="dimensions">—</strong><span>Output size</span></div></div><p id="status" class="status"><span class="dot"></span><span id="status-text">Ready to start. Camera permission is requested only after clicking Start.</span></p></section>
+      <section class="metrics"><h2 class="section-title">Live performance</h2><div class="metric-grid"><div class="metric"><strong id="fps">—</strong><span>Processing FPS</span></div><div class="metric"><strong id="latency">—</strong><span>Total processing (ms)</span></div><div class="metric"><strong id="dimensions">—</strong><span>Output size</span></div><div class="timing-breakdown" aria-label="Processing time breakdown"><div class="timing-row"><span>AI inference</span><strong id="inference-time">—</strong></div><div class="timing-row"><span>Mask processing</span><strong id="mask-time">—</strong></div><div class="timing-row"><span>Canvas rendering</span><strong id="canvas-time">—</strong></div><p class="timing-note">Smoothed milliseconds per processed frame. Includes mask extraction in mask processing; totals may include small additional overhead.</p></div></div><p id="status" class="status"><span class="dot"></span><span id="status-text">Ready to start. Camera permission is requested only after clicking Start.</span></p></section>
     </div><p class="privacy">Privacy first: webcam frames stay in this browser tab. Model and runtime files are downloaded from external hosts on first use. No recording, upload, or OBS integration is included in this build.</p>
   </div>`;
 
@@ -57,6 +57,8 @@ let running = false;
 let frameId = 0;
 let lastFrameTime = 0;
 let averageFps = 0;
+let smoothedTimes = null;
+let lastMetricsUpdate = 0;
 let previousMask = null;
 let spatialBuffer = null;
 let cleanupBuffer = null;
@@ -333,20 +335,50 @@ function updateMask(mask, width, height) {
   maskContext.putImageData(data, 0, 0);
 }
 
+function updatePerformanceMetrics(inferenceMs, maskMs, canvasMs, totalMs, finished) {
+  const alpha = 0.22;
+  if (!smoothedTimes) {
+    smoothedTimes = { inferenceMs, maskMs, canvasMs, totalMs };
+  } else {
+    for (const [key, value] of Object.entries({ inferenceMs, maskMs, canvasMs, totalMs })) {
+      smoothedTimes[key] = smoothedTimes[key] * (1 - alpha) + value * alpha;
+    }
+  }
+
+  const delta = lastFrameTime ? finished - lastFrameTime : 0;
+  lastFrameTime = finished;
+  if (delta > 0) {
+    const instantaneousFps = 1000 / delta;
+    averageFps = averageFps === 0 ? instantaneousFps : averageFps * 0.8 + instantaneousFps * 0.2;
+  }
+
+  // Limit DOM writes so monitoring does not significantly affect processing.
+  if (finished - lastMetricsUpdate < 350) return;
+  lastMetricsUpdate = finished;
+  element('fps').textContent = averageFps ? averageFps.toFixed(1) : '—';
+  element('latency').textContent = smoothedTimes.totalMs.toFixed(0);
+  element('inference-time').textContent = smoothedTimes.inferenceMs.toFixed(1) + ' ms';
+  element('mask-time').textContent = smoothedTimes.maskMs.toFixed(1) + ' ms';
+  element('canvas-time').textContent = smoothedTimes.canvasMs.toFixed(1) + ' ms';
+}
+
 function renderFrame() {
   if (!running || !segmenter || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-  const start = performance.now();
-  const result = segmenter.segmentForVideo(video, start);
+  const started = performance.now();
+  const result = segmenter.segmentForVideo(video, started);
+  const afterInference = performance.now();
+  let afterMask = afterInference;
+  let afterCanvas = afterInference;
   try {
     const masks = result.confidenceMasks ?? [];
-    // Selfie segmentation may return a single foreground confidence mask.
-    // Multi-channel variants typically place the person mask at index 1.
+    // Single-channel selfie models return their foreground mask at index 0.
     const personMask = masks.length > 1 ? masks[1] : masks[0];
     if (!personMask) throw new Error(`The model returned no confidence mask (count: ${masks.length}).`);
     updateMask(personMask.getAsFloat32Array(), personMask.width, personMask.height);
+    afterMask = performance.now();
+
     outputContext.globalCompositeOperation = 'source-over';
     outputContext.clearRect(0, 0, output.width, output.height);
-    // Blur softens the morphologically shifted edge in both directions.
     const featherPixels = Math.abs(Number(softnessInput.value)) * 8;
     outputContext.filter = featherPixels > 0 ? `blur(${featherPixels.toFixed(2)}px)` : 'none';
     outputContext.drawImage(maskCanvas, 0, 0, output.width, output.height);
@@ -354,15 +386,12 @@ function renderFrame() {
     outputContext.globalCompositeOperation = 'source-in';
     outputContext.drawImage(video, 0, 0, output.width, output.height);
     outputContext.globalCompositeOperation = 'source-over';
+    afterCanvas = performance.now();
   } finally {
     result.close();
   }
   const finished = performance.now();
-  const delta = lastFrameTime ? finished - lastFrameTime : 0;
-  lastFrameTime = finished;
-  if (delta > 0) averageFps = averageFps === 0 ? 1000 / delta : averageFps * 0.8 + (1000 / delta) * 0.2;
-  element('fps').textContent = averageFps ? averageFps.toFixed(1) : '—';
-  element('latency').textContent = (finished - start).toFixed(0);
+  updatePerformanceMetrics(afterInference - started, afterMask - afterInference, afterCanvas - afterMask, finished - started, finished);
 }
 
 function loop() {
@@ -416,6 +445,8 @@ async function start() {
     morphologyOutput = null;
     morphologyQueue = null;
     averageFps = 0;
+    smoothedTimes = null;
+    lastMetricsUpdate = 0;
     lastFrameTime = 0;
     lastVideoTime = -1;
     running = true;
@@ -454,6 +485,11 @@ function stop() {
   element('fps').textContent = '—';
   element('latency').textContent = '—';
   element('dimensions').textContent = '—';
+  for (const id of ['inference-time', 'mask-time', 'canvas-time']) element(id).textContent = '—';
+  smoothedTimes = null;
+  averageFps = 0;
+  lastFrameTime = 0;
+  lastMetricsUpdate = 0;
   setControls(false);
   status('Camera stopped.');
 }

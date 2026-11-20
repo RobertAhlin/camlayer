@@ -7,8 +7,8 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 **Visual quality reference:** Microsoft Teams. Comparable quality remains a target to evaluate, not a verified claim.
 
 **Live demo:** https://camlayer.vercel.app/  
-**Current code version:** v0.2.6  
-**Development status as of November 4, 2026:** Working browser prototype; the newest performance optimization awaits a real-camera retest.
+**Current code version:** v0.2.7  
+**Development status:** Working browser prototype. v0.2.6 was reported around 15 FPS in a later test. v0.2.7 introduces per-stage timing diagnostics, which still need live verification.
 
 ## Current capabilities
 
@@ -21,7 +21,7 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 - Edge cleanup (0.00–1.00) for spatial confidence-mask smoothing.
 - Edge stability (0.00–2.00) for motion-adaptive temporal smoothing, with an on/off stabilization toggle.
 - Optional checkerboard transparency preview.
-- Processing FPS, approximate inference-and-render time, and output dimensions.
+- Processing FPS, smoothed total processing time, separate AI inference / mask processing / canvas rendering timing, and output dimensions.
 - Browser-local saved preferences through `localStorage`.
 
 The effect of Edge cleanup has been difficult to distinguish in informal visual tests; its utility remains open for evaluation.
@@ -38,8 +38,9 @@ Observed measurements are snapshots, **not benchmarks**:
 | Later v0.1 test | 36.4 | 23 ms | 1280 × 720 |
 | v0.2 edge-adjustment test | 25.1 | 38 ms | 1280 × 720 |
 | v0.2.5 morphological processing test | 7.7 | 144 ms | 1280 × 720 |
+| v0.2.6 user follow-up (approximate) | ~15 | Not reported | Not reconfirmed |
 
-**Important:** v0.2.6 replaces the costly morphological filter with a linear-time sliding-window implementation. It is committed but was **not yet retested** when this status was written. Do not assume the earlier FPS has been recovered.
+**Update:** v0.2.6 was subsequently reported at approximately 15 FPS, improving over v0.2.5 but still below early versions. v0.2.7 adds diagnostics to identify which stage is consuming time. Its timings are not yet verified on the target machine.
 
 See [Development Status](docs/development-status.md) for the exact stopping point and [Test Plan](docs/test-plan.md) for the next checks.
 
@@ -82,6 +83,13 @@ camlayer/
 
 Current processing and UI logic are in `src/main.js`. Further modularization is a future improvement, not a prerequisite for testing.
 
+## v0.2.7 diagnostics
+
+- Adds separate, smoothed millisecond readings for MediaPipe inference, mask extraction and processing, and canvas composition.
+- Keeps existing model, CPU delegate, mask algorithm, and visual controls unchanged so timing comparisons remain meaningful.
+- Updates readings approximately every 350 ms to reduce UI-update overhead.
+- Measurements are CPU wall-clock durations on the main thread, not total camera latency, GPU execution time, or CPU thread utilization.
+
 ## Roadmap
 
 - **v0.1:** First working browser camera and segmentation preview (completed).
@@ -112,4 +120,4 @@ All source code, code comments, user-facing app strings, documentation, commit m
 
 **Project started:** November 4, 2026  
 **Last documented status:** November 4, 2026  
-**Next milestone:** Verify CamLayer v0.2.6 before starting OBS integration.
+**Next milestone:** Verify CamLayer v0.2.7 timing breakdown and locate the primary bottleneck before considering GPU or worker experiments.

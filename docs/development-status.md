@@ -3,9 +3,9 @@
 **Date:** November 4, 2026  
 **Repository:** `RobertAhlin/camlayer`  
 **Deployed URL:** https://camlayer.vercel.app/  
-**Code version:** v0.2.6  
+**Code version:** v0.2.7  
 **Last known implementation commit before this documentation update:** `5b52c83b28c99fea3acc3cf1a0f6dd6d554b09db`  
-**Verification:** v0.2.6 committed but not yet tested in the user's browser.
+**Verification:** v0.2.6 was subsequently reported at approximately 15 FPS. v0.2.7 diagnostics have been committed but not tested in the user's browser.
 
 ## Product objective
 
@@ -31,7 +31,8 @@ Build a real-time, local-first AI webcam background removal tool whose output ha
 | v0.2.3 | Edge stability extended to 2.00 | Value was initially not updating on screen; subsequently fixed |
 | v0.2.4 | Signed softness with confidence cutoff offset | Both signs looked too similar; geometry was not being changed strongly enough |
 | v0.2.5 | Actual inward erosion / outward dilation of alpha mask | Directional change implemented, but processing performance dropped sharply |
-| v0.2.6 | Sliding-window min/max morphology optimization | Committed, **not yet verified** on the target webcam |
+| v0.2.6 | Sliding-window min/max morphology optimization | User later reported about 15 FPS; still below early versions |
+| v0.2.7 | Per-stage inference / mask / canvas timing | Implemented; **not yet verified** on the target webcam |
 
 ## Troubleshooting lessons
 
@@ -63,22 +64,33 @@ Build a real-time, local-first AI webcam background removal tool whose output ha
 
 Different camera selections and software revisions were used across screenshots. These are illustrative single-frame readings, not controlled like-for-like results. The 7.7 FPS reading is the latest reported measurement; it is from v0.2.5, **before** optimization.
 
+## Follow-up measurement
+
+After v0.2.6 the user reported approximately **15 processing FPS**. That is an improvement over the v0.2.5 7.7 FPS observation, but below the earlier prototype performance. Resolution and exact settings were not reconfirmed in that message. No per-stage timing data was available yet.
+
+### v0.2.7 diagnostics
+
+The live performance panel now shows smoothed wall-clock time for:
+- AI inference (MediaPipe `segmentForVideo`).
+- Mask processing (confidence-mask extraction plus postprocessing).
+- Canvas rendering (mask feathering and video compositing).
+- Total processing, including minor result cleanup and timing overhead.
+
+These measurements do **not** count CPU threads or measure end-to-end camera latency. No CPU/GPU delegate change was made in this release.
+
 ## Current stop point
 
-CamLayer v0.2.6 is in `main` and includes an optimized min/max filter for inward/outward alpha-mask morphology. The implementation has not yet been confirmed in the deployed app after that commit. The project is paused here intentionally.
+CamLayer v0.2.7 is in `main`. The user reported around 15 FPS after v0.2.6. The v0.2.7 diagnostic display has not yet been validated after deployment.
 
 ### First actions next session
 
-1. Verify Vercel published commit `5b52c83` or a later commit containing that code.
-2. Reload https://camlayer.vercel.app/ and confirm the version label reads `v0.2.6`.
-3. Select the same physical webcam and `1280 × 720`.
-4. Repeat the last test settings: threshold `0.50`, Edge softness `−1.14`, Edge cleanup `0.55`, Edge stability `1.80`, temporal stabilization enabled.
-5. Record processing FPS and inference-and-render time after the application has stabilized.
-6. Compare inward `−1.14`, neutral `0.00`, and outward `+1.14`, with other settings unchanged.
-7. Check whether moving fingers and hair remain intact, and whether movement creates lag or flicker.
-8. If performance is still poor, profile the mask-processing steps before adding further controls.
-
-**Do not mark the optimization as successful until the user has run the same test on the updated deployment.**
+1. Confirm v0.2.7 deployed through Vercel and reload the page.
+2. Select the same webcam, `1280 × 720` if available, and identical visual settings to the prior test.
+3. Record **AI inference**, **Mask processing**, **Canvas rendering**, **Total processing**, and **Processing FPS** after the readings settle.
+4. Compare the results at Edge softness `0.00` and `−1.14` while holding every other setting fixed.
+5. Repeat at `640 × 360` to understand how costs scale with output resolution.
+6. Use the measured bottleneck to choose the next change. Investigate MediaPipe GPU delegate if inference dominates; optimize mask arrays / morphology if mask processing dominates; investigate alpha blur or canvas composition if canvas rendering dominates.
+7. Test visual quality and responsiveness before claiming any performance gain.
 
 ## Planned investigations after stabilization
 
