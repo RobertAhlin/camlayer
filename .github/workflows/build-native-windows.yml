@@ -64,6 +64,23 @@ jobs:
           Get-ChildItem 'obs-template/release/RelWithDebInfo' -Recurse -File |
             Select-Object FullName, Length | Format-Table -AutoSize
 
+      - name: Verify plugin binary and shader are packaged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'obs-template/release/RelWithDebInfo/camlayer-obs'
+          $required = @(
+            "$root/bin/64bit/camlayer-obs.dll",
+            "$root/data/ellipse_alpha.effect",
+            "$root/data/locale/en-US.ini"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path -PathType Leaf)) {
+              throw "Required artifact file missing: $path"
+            }
+            Write-Host "Verified: $path"
+          }
+
       - name: Upload Windows test plugin
         if: success()
         uses: actions/upload-artifact@v4
