@@ -69,8 +69,13 @@ int main(int argc, char **argv)
         auto input_shape = input_type.GetShape();
         if (input_type.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
             throw std::runtime_error("Expected a float32 model input.");
-        if (input_shape.size() != 4 || input_shape[0] == -1)
-            throw std::runtime_error("Expected a fixed 4D input with batch=1.");
+        if (input_shape.size() != 4 || (input_shape[0] != 1 && input_shape[0] != -1))
+            throw std::runtime_error("Expected a 4D image input with batch=1 or dynamic batch.");
+        if (input_shape[0] == -1) input_shape[0] = 1;
+        // Other dynamic dimensions require explicit preprocessing decisions.
+        for (const auto dim : input_shape) {
+            if (dim <= 0) throw std::runtime_error("Unsupported dynamic spatial/channel dimension.");
+        }
 
         const size_t elements = checked_element_count(input_shape);
         std::vector<float> image(elements, 0.5f);
