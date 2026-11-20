@@ -1,11 +1,11 @@
 # CamLayer Development Status
 
-**Date:** November 4, 2026  
+**Last updated:** November 20, 2026  
 **Repository:** `RobertAhlin/camlayer`  
 **Deployed URL:** https://camlayer.vercel.app/  
 **Code version:** v0.2.8  
-**Last known implementation commit before this documentation update:** `5b52c83b28c99fea3acc3cf1a0f6dd6d554b09db`  
-**Verification:** v0.2.7 measurements confirmed mask postprocessing as the primary bottleneck. The v0.2.8 detail modes and reusable processing module have been committed but not yet verified in the live browser.
+**Last implementation commit before this documentation update:** `bba74d7691f071bf3ba1cdec762281dca0f857d0`  
+**Verification:** v0.2.7 measurements confirmed mask postprocessing as the primary bottleneck. The v0.2.8 detail modes are now verified to run in the browser, with a significant processing-speed improvement. Fine-detail motion tests remain open.
 
 ## Product objective
 
@@ -102,19 +102,31 @@ Even a very small nonzero edge offset invokes a costly full-size morphology pass
 
 Synthetic Node benchmarks and logic tests are not a substitute for browser validation. Visual quality, FPS, and possible detail loss around hair and fingers remain to be assessed.
 
+## November 20: real-browser v0.2.8 comparison
+
+The user tested the same webcam and output size of 1280 × 720 at threshold 0.56, Edge softness −0.17, cleanup 1.00, stability 2.00, stabilization enabled:
+
+| Detail | Reported processing FPS | Total time | AI inference | Mask processing | Canvas |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Balanced | 42.8 | 23 ms | 12.5 ms | 10.4 ms | 0.3 ms |
+| Full | 16.3 | 61 ms | 14.6 ms | 45.9 ms | 0.4 ms |
+| Fast | 50.3 | 20 ms | 13.7 ms | 5.7 ms | 0.3 ms |
+
+Balanced reduced mask processing from 45.9 to 10.4 ms compared with Full in these screenshots. Fast reduced it to 5.7 ms. All three screenshots showed usable static person segmentation; some background remains near one side of the head. Dynamic edge fidelity is **not yet verified**.
+
+**Frame-rate caveat:** The loop uses `requestAnimationFrame` plus `video.currentTime`, not an explicit new-camera-frame callback. `currentTime` can advance between unique captured video frames, so 50.3 processing FPS is not evidence the webcam supplied 50.3 distinct frames per second. Fix this measurement and avoid redundant inference next.
+
 ## Current stop point
 
 CamLayer v0.2.8 is in `main` after committing this documentation. The user demonstrated the v0.2.7 performance breakdown; v0.2.8 still needs a real-camera comparison.
 
-### First actions next session
+### Next actions
 
-1. Confirm Vercel displays **v0.2.8** and the Mask detail control.
-2. Select 1280 × 720 with fixed threshold 0.85, stability 1.75, and stabilization enabled.
-3. With Edge softness −0.07 and cleanup 0, record AI inference, mask processing, total processing, and FPS for **Full**, **Balanced**, and **Fast**.
-4. Repeat with softness 0 and cleanup 1.00 to compare the second known bottleneck.
-5. Inspect thin fingers, flyaway hairs, glasses and shoulders in each mode. Look for aliasing, loss of hair, or changed feather direction.
-6. Compare against the earlier v0.2.7 measurements. Keep Full as an available quality reference.
-7. Avoid changing GPU delegates or models before interpreting the per-stage improvements.
+1. Introduce `requestVideoFrameCallback` for unique captured frames when supported, with a safe fallback.
+2. Separate actual camera-frame throughput from processing time / effective output update cadence in diagnostics.
+3. Compare Balanced and Fast while moving the head and fingers; check hair and shoulder edges and whether the background patch near the head persists.
+4. If needed, add a controlled test scene and collect time-averaged performance statistics instead of single snapshots.
+5. Keep Balanced as the current default until dynamic-quality tests support a change.
 
 ## Planned investigations after stabilization
 
