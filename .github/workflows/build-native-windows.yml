@@ -1,0 +1,73 @@
+name: Build CamLayer OBS plugin (Windows)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'native/obs-plugin/**'
+      - '.github/workflows/build-native-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    name: Windows x64 plugin bootstrap
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - name: Checkout CamLayer source
+        uses: actions/checkout@v4
+        with:
+          path: camlayer
+
+      - name: Checkout official OBS plugin template
+        uses: actions/checkout@v4
+        with:
+          repository: obsproject/obs-plugintemplate
+          ref: master
+          path: obs-template
+          submodules: recursive
+
+      - name: Adapt official template for CamLayer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Copy-Item 'camlayer/native/obs-plugin/src/plugin-main.c' 'obs-template/src/plugin-main.c' -Force
+          New-Item -ItemType Directory -Force -Path 'obs-template/data/locale' | Out-Null
+          Copy-Item 'camlayer/native/obs-plugin/data/locale/en-US.ini' 'obs-template/data/locale/en-US.ini' -Force
+
+          $specFile = 'obs-template/buildspec.json'
+          $spec = Get-Content $specFile -Raw | ConvertFrom-Json
+          $spec.name = 'camlayer-obs'
+          $spec.displayName = 'CamLayer OBS Plugin'
+          $spec.version = '0.1.0'
+          $spec.author = 'CamLayer contributors'
+          $spec.website = 'https://github.com/RobertAhlin/camlayer'
+          $spec.email = ''
+          $spec | ConvertTo-Json -Depth 20 | Set-Content -Path $specFile -Encoding utf8
+
+          Write-Host 'OBS plugin template prepared for CamLayer (pass-through only).'
+
+      - name: Configure, build and install using OBS template
+        working-directory: obs-template
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./.github/scripts/Build-Windows.ps1 -Target x64 -Configuration RelWithDebInfo
+
+      - name: Show built files
+        if: success()
+        shell: pwsh
+        run: |
+          Get-ChildItem 'obs-template/release/RelWithDebInfo' -Recurse -File |
+            Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Upload Windows test plugin
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: camlayer-obs-windows-x64-bootstrap
+          path: obs-template/release/RelWithDebInfo/
+          if-no-files-found: error
+          retention-days: 14
