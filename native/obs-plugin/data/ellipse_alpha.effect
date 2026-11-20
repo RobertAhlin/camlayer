@@ -1,0 +1,45 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform bool ellipse_enabled;
+
+sampler_state textureSampler {
+    Filter   = Linear;
+    AddressU = Clamp;
+    AddressV = Clamp;
+};
+
+struct VertData {
+    float4 pos : POSITION;
+    float2 uv : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+    VertData v_out;
+    v_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+    v_out.uv = v_in.uv;
+    return v_out;
+}
+
+float4 PSAlphaDiagnostic(VertData v_in) : TARGET
+{
+    float4 rgba = image.Sample(textureSampler, v_in.uv);
+
+    if (ellipse_enabled) {
+        float2 normalized = (v_in.uv - float2(0.5, 0.54)) /
+                            float2(0.34, 0.48);
+        float distance_from_center = length(normalized);
+        float alpha = 1.0 - smoothstep(0.98, 1.02, distance_from_center);
+        rgba.a *= alpha;
+    }
+    return rgba;
+}
+
+technique Draw
+{
+    pass
+    {
+        vertex_shader = VSDefault(v_in);
+        pixel_shader = PSAlphaDiagnostic(v_in);
+    }
+}
