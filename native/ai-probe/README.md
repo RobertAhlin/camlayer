@@ -31,7 +31,8 @@ A green result means the model can be loaded and run on the hosted Windows machi
 - File: `onnx/model.onnx`.
 - Expected SHA256: `3241ac4ad8aa35bdaf33946776db29f7c283a413aa0b0dacb9483594b4531aad`.
 - Model card lists Apache-2.0. Validate original upstream attribution and redistribution terms before packaging a public release.
-- Runtime: official Microsoft ONNX Runtime CPU x64 version `1.24.2`. Its redistribution/license conditions must also be included in any package.
+- Runtime: official Microsoft.ML.OnnxRuntime NuGet package version `1.24.2`, containing Windows x64 native binaries and C++ headers. Its redistribution/license conditions must also be included in any package.
+- The original workflow incorrectly targeted a non-existent GitHub release ZIP for this version and failed with HTTP 404. The download source has been corrected to the official NuGet package; a new successful build still needs confirmation.
 
 The workflow downloads the model from Hugging Face and the runtime from GitHub on the build runner. **The Windows workstation does not need to download or install development tools.** This smoke test does not publish a distributable ONNX runtime or OBS package.
 
