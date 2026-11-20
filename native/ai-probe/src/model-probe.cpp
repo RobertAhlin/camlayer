@@ -2,9 +2,12 @@
 // This is a command-line probe, not a real-time OBS integration.
 #include <onnxruntime_cxx_api.h>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <fstream>
+#include <iterator>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -15,6 +18,54 @@
 #endif
 #include <windows.h>
 #endif
+
+// The source PPM must be resized to 256x256 before invoking this probe.
+// P6 RGB bytes are mapped to planar NCHW floats in [0,1], matching
+// the pinned model's do_rescale=true, do_normalize=false configuration.
+static std::vector<float> load_ppm_rgb(const std::string &path, int width, int height)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file) throw std::runtime_error("Could not open test image: " + path);
+
+    std::string magic;
+    int w = 0, h = 0, max_value = 0;
+    file >> magic >> w >> h >> max_value;
+    if (!file || magic != "P6" || w != width || h != height || max_value != 255)
+        throw std::runtime_error("Expected P6 RGB PPM with 256x256 resolution and maxval 255.");
+    char separator = 0;
+    file.get(separator);
+    if (!file || !std::isspace(static_cast<unsigned char>(separator)))
+        throw std::runtime_error("Invalid PPM pixel separator.");
+
+    const size_t pixels = static_cast<size_t>(w) * static_cast<size_t>(h);
+    std::vector<uint8_t> interleaved(pixels * 3);
+    file.read(reinterpret_cast<char *>(interleaved.data()),
+              static_cast<std::streamsize>(interleaved.size()));
+    if (file.gcount() != static_cast<std::streamsize>(interleaved.size()))
+        throw std::runtime_error("Incomplete PPM image.");
+    std::vector<float> planar(interleaved.size());
+    for (size_t i = 0; i < pixels; ++i) {
+        for (size_t channel = 0; channel < 3; ++channel)
+            planar[channel * pixels + i] = interleaved[3 * i + channel] / 255.0f;
+    }
+    return planar;
+}
+
+static void save_pgm_mask(const std::string &path, const float *mask, size_t count,
+                          int width, int height)
+{
+    if (count != static_cast<size_t>(width) * static_cast<size_t>(height))
+        throw std::runtime_error("Unexpected mask size.");
+    std::ofstream file(path, std::ios::binary);
+    if (!file) throw std::runtime_error("Could not create mask file.");
+    file << "P5\\n" << width << " " << height << "\\n255\\n";
+    for (size_t i = 0; i < count; ++i) {
+        const float value = std::clamp(mask[i], 0.0f, 1.0f);
+        const unsigned char sample = static_cast<unsigned char>(value * 255.0f + 0.5f);
+        file.put(static_cast<char>(sample));
+    }
+    if (!file) throw std::runtime_error("Failed writing mask file.");
+}
 
 static std::string describe_shape(const std::vector<int64_t> &shape)
 {
@@ -81,7 +132,14 @@ int main(int argc, char **argv)
         }
 
         const size_t elements = checked_element_count(input_shape);
-        std::vector<float> image(elements, 0.5f);
+        const bool image_test = argc == 4;
+        // Real input images use fixed 256x256 RGB layout, otherwise maintain
+        // the original synthetic test to detect model/runtime regressions.
+        std::vector<float> image = image_test
+            ? load_ppm_rgb(argv[2], 256, 256)
+            : std::vector<float>(elements, 0.5f);
+        if (image.size() != elements)
+            throw std::runtime_error("Image size does not match the model tensor.");
         auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
         auto input_tensor = Ort::Value::CreateTensor<float>(
             memory_info, image.data(), image.size(), input_shape.data(), input_shape.size());
