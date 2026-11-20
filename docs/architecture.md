@@ -1,6 +1,6 @@
 # Current Architecture
 
-**As implemented in v0.3.0.** This describes the working browser prototype, not a completed OBS plugin.
+**As implemented in v0.4.0.** This describes the working browser prototype, not a completed OBS plugin.
 
 ## Data flow
 
@@ -104,3 +104,23 @@ The existing application now accepts `?mode=obs`: CSS hides the main UI, origina
 An independent `obs-test.html` page exposes translucent and opaque shapes against a truly transparent CSS background. This page does not request camera permission and should be tested first to isolate transparency behavior.
 
 The OBS embedded browser has its own permission model and device context, which may prevent `getUserMedia`. A visual alpha test alone cannot establish webcam compatibility. This architecture does not yet implement an external-browser bridge, inter-process frame transfer or native plugin.
+
+## Local OBS Bridge architecture (experimental v0.4.0)
+
+```text
+Chrome localhost camera + MediaPipe segmentation
+     |
+Transparent Canvas 2D output
+     |
+WebP alpha image encoding (drop frames if busy)
+     |
+WebSocket sender -> 127.0.0.1:8765 relay
+     |
+WebSocket receiver -> OBS Browser Source
+     |
+WebP decode -> transparent canvas over OBS scene
+```
+
+A Node.js `ws` server broadcasts encoded images to connected local receivers. A random session token is printed when the server starts; the server listens only on IPv4 loopback and checks the WebSocket Origin header. The relay does not store media or forward frames to the internet. Camera/model resources may still be downloaded over the network by the Chrome browser.
+
+The frame-transfer protocol is a prototype, not yet tested in OBS. Image serialization can add CPU overhead and latency. A future implementation may use a faster local frame channel or OBS-native source if performance is inadequate.
