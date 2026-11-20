@@ -1,8 +1,12 @@
 import { MaskProcessor } from './mask-processor.mjs';
 import { FrameTiming } from './frame-timing.mjs';
+import { BridgeSender } from '../bridge/sender.mjs';
 
 const params = new URLSearchParams(window.location.search);
 const OBS_MODE = params.get('mode') === 'obs';
+const BRIDGE_MODE = params.get('mode') === 'bridge';
+const BRIDGE_TOKEN = BRIDGE_MODE ? params.get('token') : null;
+const IS_LOCAL_BRIDGE = BRIDGE_MODE && ['localhost', '127.0.0.1'].includes(window.location.hostname) && Boolean(BRIDGE_TOKEN);
 const OBS_DEBUG = OBS_MODE && params.get('debug') === '1';
 document.body.classList.toggle('obs-mode', OBS_MODE);
 document.body.classList.toggle('obs-debug', OBS_DEBUG);
@@ -20,7 +24,7 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.3.0</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.4.0</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
@@ -28,6 +32,7 @@ app.innerHTML = `
       <label class="field">Mask detail <select id="mask-detail"><option value="balanced">Balanced · 640px</option><option value="full">Full · Original</option><option value="fast">Fast · 480px</option></select></label>
       <button id="start">Start camera</button><button id="stop" class="secondary" disabled>Stop</button>
     </div>
+    <p id="bridge-status" class="bridge-status" hidden></p>
     <div class="obs-message" id="obs-message" role="status" aria-live="polite"></div>
     <div class="views">
       <section class="panel"><div class="panel-header"><strong>Original camera</strong><span class="pill">INPUT</span></div><div class="stage" id="original-stage"><video id="video" autoplay playsinline muted></video><div class="placeholder"><div class="mark">◉</div>Camera preview appears here</div></div></section>
@@ -77,6 +82,10 @@ let lastFallbackAt = 0;
 let diagnosticsInterval = null;
 let smoothedTimes = null;
 const frameTiming = new FrameTiming();
+const bridgeSender = IS_LOCAL_BRIDGE ? new BridgeSender(BRIDGE_TOKEN, (message) => {
+  const notice = document.getElementById('bridge-status');
+  if (notice) notice.textContent = message;
+}) : null;
 const maskProcessor = new MaskProcessor();
 let cachedMaskImage = null;
 const SETTINGS_KEY = 'camlayer.settings.v2';
@@ -283,6 +292,7 @@ function renderFrame() {
   const totalMs = finished - started;
   updatePerformanceMetrics(afterInference - started, afterMask - afterInference, afterCanvas - afterMask, totalMs);
   frameTiming.onProcessed(finished, totalMs);
+  bridgeSender?.sendFrame(output, finished);
 }
 
 function handleFrameError(error) {
@@ -401,6 +411,7 @@ function stop() {
   if (diagnosticsInterval !== null) window.clearInterval(diagnosticsInterval);
   diagnosticsInterval = null;
   frameTiming.finishTest(performance.now(), 'interrupted');
+  bridgeSender?.clear();
   stream?.getTracks().forEach((track) => track.stop());
   stream = null;
   video.pause();
@@ -448,10 +459,19 @@ window.addEventListener('pagehide', () => {
   cancelScheduledFrame();
   if (diagnosticsInterval !== null) window.clearInterval(diagnosticsInterval);
   frameTiming.finishTest(performance.now(), 'interrupted');
+  bridgeSender?.close();
   stream?.getTracks().forEach((track) => track.stop());
   segmenter?.close();
 });
 if (navigator.mediaDevices?.enumerateDevices) void listCameras();
+if (bridgeSender) {
+  element('bridge-status').hidden = false;
+  bridgeSender.connect();
+  status('Local bridge ready. Select your camera and click Start camera.');
+} else if (BRIDGE_MODE) {
+  status('Bridge mode requires the local server URL and a valid session token.', 'error');
+}
+
 
 if (OBS_MODE) {
   // Browser Source has independent camera permissions and preferences.

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CamLayer Local Alpha Output</title>
+  <style>
+    html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent!important}
+    canvas{display:block;width:100%;height:100%;object-fit:contain}
+    #status{position:fixed;left:12px;bottom:12px;z-index:2;color:white;background:#16233bdc;
+      border-radius:8px;padding:9px 13px;font:13px system-ui,sans-serif}
+    #status[hidden]{display:none}
+  </style>
+</head>
+<body>
+  <canvas width="1280" height="720"></canvas>
+  <p id="status" hidden></p>
+  <script type="module" src="/bridge/output.js"></script>
+</body>
+</html>

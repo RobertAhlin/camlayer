@@ -56,3 +56,6 @@ body.obs-mode .obs-message.error{border-color:#e68194}
 body.obs-mode.obs-debug .toolbar{display:flex;position:fixed;z-index:101;left:12px;top:12px;padding:12px;background:#152039ed;border-radius:10px;max-width:calc(100vw - 24px)}
 body.obs-mode.obs-debug .toolbar .field{display:none}
 body.obs-mode.obs-debug .toolbar button{display:block}
+
+.bridge-status{padding:10px 13px;margin:12px 0 16px;border-radius:11px;background:#132e37;border:1px solid #255b62;font-size:12px;color:#a6e7e3;line-height:1.5}
+.bridge-status[hidden]{display:none}

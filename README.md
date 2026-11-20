@@ -7,7 +7,7 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 **Visual quality reference:** Microsoft Teams. Comparable quality remains a target to evaluate, not a verified claim.
 
 **Live demo:** https://camlayer.vercel.app/  
-**Current code version:** v0.3.0  
+**Current code version:** v0.4.0  
 **Development status:** Working browser prototype with tested visual quality and timed stability diagnostics. v0.3.0 introduces experimental OBS Browser Source compatibility tests; OBS camera access is not yet verified.
 
 ## Current capabilities
@@ -70,6 +70,12 @@ The repository's `vercel.json` configures a static website without an installati
 camlayer/
 ├── README.md
 ├── obs-test.html
+├── bridge/
+│   ├── server.mjs
+│   ├── sender.mjs
+│   ├── output.html
+│   ├── output.js
+│   └── package.json
 ├── index.html
 ├── vercel.json
 ├── .gitignore
@@ -88,6 +94,47 @@ camlayer/
 ```
 
 Current processing and UI logic are in `src/main.js`. Further modularization is a future improvement, not a prerequisite for testing.
+
+## v0.4.0: Local OBS Bridge prototype
+
+This is the first local-only OBS integration prototype. It uses a small Node.js relay running on `127.0.0.1:8765`, a Chrome capture page, and an OBS Browser Source display page. OBS never requests access to the webcam.
+
+### Requirements
+
+- Windows with Node.js 20 or newer installed.
+- OBS Studio with Browser Source.
+- Chrome or a Chromium browser with webcam access.
+- Network access on the first load to download the MediaPipe model/runtime.
+
+### Start on Windows
+
+Open a PowerShell terminal in the repository:
+
+```powershell
+cd bridge
+npm install
+npm start
+```
+
+The terminal prints **two session-specific URLs**. The token is randomly generated every time the bridge starts.
+
+1. Open the **Chrome sender URL** printed by the server. Select a camera, select Balanced, and click **Start camera**.
+2. In OBS create a **Browser Source** at the **OBS output URL** printed by the server. Set source width to 1280 and height to 720. Keep Chrome and the terminal open.
+3. The transparent composited video should appear as an overlay in OBS. If debugging, append `&debug=1` to the OBS source URL.
+
+A Windows firewall dialog is not normally necessary because the server listens only on the computer's IPv4 loopback address. Do not bind this experimental bridge to a public network interface. Keep the randomly generated URL token private.
+
+### How it works
+
+The sender converts the transparent composition canvas to WebP frames, sends each image over localhost WebSocket to the relay, and OBS decodes and draws the newest frames onto a transparent canvas.
+
+- Frame encoding, WebSocket transfer and decoding introduce latency and CPU overhead. We must test responsiveness in OBS rather than assuming performance from the normal preview.
+- To avoid unbounded queues, frames are skipped when the sender is busy encoding or network buffers are full.
+- The code stays local, but runtime and model assets are downloaded from existing third-party CDNs on first use. No webcam image is sent to Vercel.
+- Browser Source permissions are bypassed because OBS only reads an output page, not the camera.
+- This is not a native OBS plugin or a production-ready video transport. WebP alpha, CEF decoding, latency and long-run stability require hands-on OBS testing.
+
+Do **not** use the Vercel URL with `?mode=bridge`. The relay exists only on the local Node.js server, not on Vercel.
 
 ## v0.3.0: experimental OBS Browser Source compatibility
 
@@ -215,4 +262,4 @@ All source code, code comments, user-facing app strings, documentation, commit m
 
 **Project started:** November 4, 2026  
 **Last documented status:** November 20, 2026  
-**Next milestone:** Test the OBS transparency page and then the camera OBS Browser Source experiment. Choose an integration architecture based on the actual permission results.
+**Next milestone:** Run the local bridge on Windows and verify live alpha output, frame rate, latency and reliability in OBS.
