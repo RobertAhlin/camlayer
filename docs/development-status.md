@@ -233,3 +233,11 @@ The GitHub Actions workflow `verify-native-ai.yml` downloads a pinned ONNX Runti
 **Status:** Sources and CI were committed. The inference run itself has **not yet been independently verified** by reviewing a successful workflow log. It is not integrated into the OBS plugin, so the live plugin continues to display the GPU ellipse diagnostic, not AI person segmentation.
 
 After green CI: confirm the model's actual input layout, scaling and output activation before implementing asynchronous capture, inference and alpha upload in OBS. Keep a fallback to the existing verified ellipse diagnostic, and avoid tying real-time inference to OBS's graphics render thread.
+
+## Real-image native segmentation verification (November 20, 2026)
+
+GitHub Actions run #8 confirmed that ONNX Runtime 1.24.2 executed the ONNX model with a synthetic tensor and returned an output of shape 1x1x256x256. The constant synthetic input gave an all-zero output, which does not establish useful person segmentation.
+
+New probe code now accepts a P6 RGB portrait (256x256), packs channels as normalized NCHW float32 in [0,1], exports the 256x256 mask as PGM, and checks that the output is nonconstant. The workflow fetches a publicly available Pexels-licensed portrait from a third-party sample project, generates the input PPM and converts the mask into PNG. It uploads the source photo and mask for manual comparison, without uploading either into the repository.
+
+**The first real-image workflow result and visual mask quality are not yet verified in this record.** It must pass CI and be inspected before live inference is added to the OBS filter. The existing GPU ellipse diagnostic remains the verified on-device fallback.
