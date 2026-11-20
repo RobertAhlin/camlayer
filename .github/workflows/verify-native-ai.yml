@@ -1,0 +1,68 @@
+name: Verify CamLayer Native AI Model (Windows)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'native/ai-probe/**'
+      - '.github/workflows/verify-native-ai.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-onnx-inference:
+    name: Windows x64 ONNX model inference
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - name: Checkout CamLayer
+        uses: actions/checkout@v4
+
+      - name: Download pinned ONNX Runtime and model
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ortVersion = '1.24.2'
+          $ortZip = "onnxruntime-win-x64-$ortVersion.zip"
+          $ortUrl = "https://github.com/microsoft/onnxruntime/releases/download/v$ortVersion/$ortZip"
+          New-Item -ItemType Directory -Force -Path 'deps', 'models' | Out-Null
+          Invoke-WebRequest -Uri $ortUrl -OutFile "deps/$ortZip"
+          Expand-Archive -Path "deps/$ortZip" -DestinationPath 'deps' -Force
+          $modelUrl = 'https://huggingface.co/onnx-community/mediapipe_selfie_segmentation/resolve/d1eb4b9905988be58be2f6a3782e606ac9a3ca2f/onnx/model.onnx'
+          Invoke-WebRequest -Uri $modelUrl -OutFile 'models/selfie_segmentation.onnx'
+          $model = Get-Item 'models/selfie_segmentation.onnx'
+          if ($model.Length -lt 100000) { throw 'Downloaded model unexpectedly small.' }
+          Get-FileHash -Algorithm SHA256 'models/selfie_segmentation.onnx' | Format-List
+          Get-FileHash -Algorithm SHA256 "deps/$ortZip" | Format-List
+
+      - name: Compile native model probe (MSVC x64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ort = 'deps/onnxruntime-win-x64-1.24.2'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products '*' -property installationPath
+          if (-not $vsPath) { throw 'Visual Studio C++ tools not found.' }
+          $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /W4 /I`"$ort/include`" native/ai-probe/src/model-probe.cpp /link /LIBPATH:`"$ort/lib`" onnxruntime.lib /OUT:camlayer-model-probe.exe"
+          cmd /c $cmd
+          if ($LASTEXITCODE -ne 0) { throw "C++ compilation failed: $LASTEXITCODE" }
+
+      - name: Run model inference on synthetic image
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "$pwd/deps/onnxruntime-win-x64-1.24.2/lib;$env:PATH"
+          & ./camlayer-model-probe.exe 'models/selfie_segmentation.onnx'
+          if ($LASTEXITCODE -ne 0) { throw 'Native ONNX model inference test failed.' }
+
+      - name: Upload probe results (not an OBS plugin)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: camlayer-native-model-probe-windows
+          path: |
+            camlayer-model-probe.exe
+            native/ai-probe/README.md
+          retention-days: 7
