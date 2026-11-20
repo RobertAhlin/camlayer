@@ -58,7 +58,7 @@ static void save_pgm_mask(const std::string &path, const float *mask, size_t cou
         throw std::runtime_error("Unexpected mask size.");
     std::ofstream file(path, std::ios::binary);
     if (!file) throw std::runtime_error("Could not create mask file.");
-    file << "P5\\n" << width << " " << height << "\\n255\\n";
+    file << "P5\n" << width << " " << height << "\n255\n";
     for (size_t i = 0; i < count; ++i) {
         const float value = std::clamp(mask[i], 0.0f, 1.0f);
         const unsigned char sample = static_cast<unsigned char>(value * 255.0f + 0.5f);
