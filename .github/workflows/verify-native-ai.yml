@@ -33,7 +33,11 @@ jobs:
           Invoke-WebRequest -Uri $modelUrl -OutFile 'models/selfie_segmentation.onnx'
           $model = Get-Item 'models/selfie_segmentation.onnx'
           if ($model.Length -lt 100000) { throw 'Downloaded model unexpectedly small.' }
-          Get-FileHash -Algorithm SHA256 'models/selfie_segmentation.onnx' | Format-List
+          $modelHash = (Get-FileHash -Algorithm SHA256 'models/selfie_segmentation.onnx').Hash.ToLowerInvariant()
+          if ($modelHash -ne '3241ac4ad8aa35bdaf33946776db29f7c283a413aa0b0dacb9483594b4531aad') {
+            throw "Model checksum mismatch: $modelHash"
+          }
+          Write-Host "Verified pinned model SHA256: $modelHash"
           Get-FileHash -Algorithm SHA256 "deps/$ortZip" | Format-List
 
       - name: Compile native model probe (MSVC x64)
@@ -41,7 +45,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $ort = 'deps/onnxruntime-win-x64-1.24.2'
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products '*' -property installationPath
           if (-not $vsPath) { throw 'Visual Studio C++ tools not found.' }
           $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
