@@ -22,6 +22,7 @@ const paths = new Map([
   ['/', 'index.html'],
   ['/index.html', 'index.html'],
   ['/src/main.js', 'src/main.js'],
+  ['/bridge/sender.mjs', 'bridge/sender.mjs'],
   ['/src/styles.css', 'src/styles.css'],
   ['/src/mask-processor.mjs', 'src/mask-processor.mjs'],
   ['/src/frame-timing.mjs', 'src/frame-timing.mjs'],
@@ -105,7 +106,19 @@ wss.on('connection', (ws) => {
   broadcastState();
 
   ws.on('message', (data, isBinary) => {
-    if (ws !== sender || !isBinary) return;
+    if (ws !== sender) return;
+    if (!isBinary) {
+      try {
+        const control = JSON.parse(data.toString());
+        if (control?.type === 'clear') {
+          lastFrame = null;
+          for (const receiver of receivers) {
+            if (receiver.readyState === WebSocket.OPEN) receiver.send(JSON.stringify({ type: 'clear' }));
+          }
+        }
+      } catch {}
+      return;
+    }
     // Only forward a real encoded WebP or PNG image, never arbitrary messages.
     const webp = data.length >= 12 && data.subarray(0, 4).toString() === 'RIFF' && data.subarray(8, 12).toString() === 'WEBP';
     const png = data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
