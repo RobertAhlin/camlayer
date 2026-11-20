@@ -223,3 +223,13 @@ After the initial native Windows pass-through build produced a DLL and locale fi
 **Validation required:** Wait for the current Windows GitHub Actions run, inspect the built artifact for `bin/64bit/camlayer-obs.dll` and `data/ellipse_alpha.effect`, then test in OBS on a machine where plugin installation is permitted. If the shader fails to load, review the OBS log rather than attributing it to AI inference.
 
 **Next AI design decision:** Select a native-compatible model execution runtime and validate that the browser model or an equivalent segmentation model can be distributed and run offline with suitable CPU/GPU performance. The JavaScript MediaPipe runtime cannot simply be linked into the native C plugin.
+
+## Native inference smoke test (November 20, 2026)
+
+Implemented `native/ai-probe/src/model-probe.cpp`, a C++ ONNX Runtime smoke test that attempts to load a pinned MediaPipe Selfie Segmentation ONNX model, runs one synthetic image inference, validates float output, and reports tensor metadata.
+
+The GitHub Actions workflow `verify-native-ai.yml` downloads a pinned ONNX Runtime CPU Windows x64 release and a model at fixed revision, verifies the model SHA256, compiles the native C++ probe, runs inference, and publishes the probe executable only if successful.
+
+**Status:** Sources and CI were committed. The inference run itself has **not yet been independently verified** by reviewing a successful workflow log. It is not integrated into the OBS plugin, so the live plugin continues to display the GPU ellipse diagnostic, not AI person segmentation.
+
+After green CI: confirm the model's actual input layout, scaling and output activation before implementing asynchronous capture, inference and alpha upload in OBS. Keep a fallback to the existing verified ellipse diagnostic, and avoid tying real-time inference to OBS's graphics render thread.
