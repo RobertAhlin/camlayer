@@ -8,7 +8,7 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 
 **Live demo:** https://camlayer.vercel.app/  
 **Current code version:** v0.2.8  
-**Development status:** Working browser prototype. Live v0.2.7 measurements identified mask postprocessing as the main performance bottleneck. v0.2.8 adds selectable mask-processing detail levels and buffer reuse; browser FPS and visual quality require verification.
+**Development status:** Working browser prototype. Live v0.2.7 measurements identified mask postprocessing as the main performance bottleneck. v0.2.8 adds selectable mask-processing detail levels and buffer reuse; real-browser screenshots now confirm a large reduction in mask processing time, with the effect on moving fine details still to be evaluated.
 
 ## Current capabilities
 
@@ -86,6 +86,22 @@ camlayer/
 
 Current processing and UI logic are in `src/main.js`. Further modularization is a future improvement, not a prerequisite for testing.
 
+## v0.2.8 live measurements (November 20, 2026)
+
+At 1280 × 720 output, with threshold 0.56, Edge softness −0.17, Edge cleanup 1.00, Edge stability 2.00, stabilization enabled, the same external webcam, and the same room:
+
+| Mask detail | Processing FPS (reported) | Total processing | AI inference | Mask processing | Canvas rendering |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Full | 16.3 | 61 ms | 14.6 ms | 45.9 ms | 0.4 ms |
+| Balanced | 42.8 | 23 ms | 12.5 ms | 10.4 ms | 0.3 ms |
+| Fast | 50.3 | 20 ms | 13.7 ms | 5.7 ms | 0.3 ms |
+
+These are screenshots of live, smoothed readings, not formal benchmarks. At this fixed scene and settings, Balanced improved reported processing throughput by roughly 2.6× versus Full, while Fast reduced mask processing time by roughly 8.1× versus Full.
+
+**Caution:** The current rendering loop uses `requestAnimationFrame` and checks `video.currentTime`, which advances during playback even without a new captured frame. Consequently, the displayed processing FPS can exceed the camera's actual unique-frame rate, and some frames may be reprocessed. A future iteration should use `HTMLVideoElement.requestVideoFrameCallback` where supported, with a fallback for older browsers, and label processed frame throughput separately from captured unique frames.
+
+Still to test: fast hand movement, fine hair and fingers, background leakage near the ears/shoulders, and prolonged use. The screenshots suggest Fast and Balanced look similar for this mostly stationary scene but are not sufficient for a full quality conclusion.
+
 ## v0.2.8 mask processing optimization
 
 - Extracts reusable pure JavaScript postprocessing into `src/mask-processor.mjs`.
@@ -145,5 +161,5 @@ All source code, code comments, user-facing app strings, documentation, commit m
 ---
 
 **Project started:** November 4, 2026  
-**Last documented status:** November 4, 2026  
-**Next milestone:** Compare Fast, Balanced and Full mask detail in the deployed v0.2.8 app, measuring FPS and fine-edge quality with otherwise unchanged settings.
+**Last documented status:** November 20, 2026  
+**Next milestone:** Measure unique captured frames separately from processing throughput, then test moving fine details across Fast, Balanced and Full.
