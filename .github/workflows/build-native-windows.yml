@@ -36,6 +36,7 @@ jobs:
           Copy-Item 'camlayer/native/obs-plugin/src/plugin-main.c' 'obs-template/src/plugin-main.c' -Force
           New-Item -ItemType Directory -Force -Path 'obs-template/data/locale' | Out-Null
           Copy-Item 'camlayer/native/obs-plugin/data/locale/en-US.ini' 'obs-template/data/locale/en-US.ini' -Force
+          Copy-Item 'camlayer/native/obs-plugin/data/ellipse_alpha.effect' 'obs-template/data/ellipse_alpha.effect' -Force
 
           $specFile = 'obs-template/buildspec.json'
           $spec = Get-Content $specFile -Raw | ConvertFrom-Json
