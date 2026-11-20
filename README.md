@@ -11,6 +11,18 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 **Native OBS plugin:** bootstrap source code added; build and model integration pending  
 **Development status:** Browser-based segmentation and the temporary OBS Chroma Output have been tested. The long-term product target is now a native OBS video filter. Its first pass-through scaffold is committed but has not yet been compiled or installed.
 
+## Native AI engine validation (in progress)
+
+The native OBS GPU alpha diagnostic has already been verified by a real OBS test. The next implementation milestone is loading and running a person segmentation model in native Windows code.
+
+- Added a standalone C++ ONNX Runtime probe at [native/ai-probe](native/ai-probe/README.md).
+- Added [Verify CamLayer Native AI Model (Windows)](.github/workflows/verify-native-ai.yml) to build and run it automatically on GitHub-hosted Windows machines.
+- Chosen a pinned ONNX MediaPipe Selfie Segmentation candidate (Apache-2.0 model listing) and official ONNX Runtime CPU package.
+- The initial test uses a synthetic image, verifies tensor dimensions and checks that the output contains only finite values.
+- **This is not yet live camera inference or a working native AI OBS filter.** The existing filter still uses a diagnostic ellipse; integration follows only after the inference probe passes.
+
+The end-user computer remains free from Node.js, Python, CMake and model development dependencies. A later deployable OBS plugin will still require IT-permitted installation.
+
 ## Native OBS plugin roadmap (primary product direction)
 
 The long-term deliverable is **CamLayer AI Background Removal**, a native OBS Studio video filter applied directly to a camera source. It must not require Chrome, green-screen chroma keying, a local Node.js server, or access to camera hardware from OBS's embedded browser.
@@ -306,4 +318,4 @@ All source code, code comments, user-facing app strings, documentation, commit m
 
 **Project started:** November 4, 2026  
 **Last documented status:** November 20, 2026  
-**Next milestone:** Validate the GPU-based diagnostic ellipse in OBS, then replace the test geometry with native model inference and a real person mask.
+**Next milestone:** Confirm the Windows ONNX inference probe succeeds, then integrate the model's mask output into the verified native OBS GPU transparency pipeline.
