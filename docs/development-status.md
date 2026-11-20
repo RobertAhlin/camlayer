@@ -3,9 +3,9 @@
 **Date:** November 4, 2026  
 **Repository:** `RobertAhlin/camlayer`  
 **Deployed URL:** https://camlayer.vercel.app/  
-**Code version:** v0.2.7  
+**Code version:** v0.2.8  
 **Last known implementation commit before this documentation update:** `5b52c83b28c99fea3acc3cf1a0f6dd6d554b09db`  
-**Verification:** v0.2.6 was subsequently reported at approximately 15 FPS. v0.2.7 diagnostics have been committed but not tested in the user's browser.
+**Verification:** v0.2.7 measurements confirmed mask postprocessing as the primary bottleneck. The v0.2.8 detail modes and reusable processing module have been committed but not yet verified in the live browser.
 
 ## Product objective
 
@@ -78,19 +78,43 @@ The live performance panel now shows smoothed wall-clock time for:
 
 These measurements do **not** count CPU threads or measure end-to-end camera latency. No CPU/GPU delegate change was made in this release.
 
+## v0.2.7 measured bottleneck
+
+The user compared three settings in 1280 × 720 with threshold 0.85 and Edge stability 1.75:
+
+| Softness | Cleanup | FPS | Mask processing |
+| ---: | ---: | ---: | ---: |
+| 0.00 | 0.00 | 41.4 | 10.9 ms |
+| −0.07 | 0.00 | 17.7 | 37.2 ms |
+| 0.00 | 1.00 | 24.0 | 26.6 ms |
+
+Even a very small nonzero edge offset invokes a costly full-size morphology pass. Cleanup also adds significant time. Inference remained approximately 12.6–18.1 ms, while canvas rendering was below 1 ms in these screenshots.
+
+## v0.2.8 implementation
+
+- Extracts mask processing to a reusable, independently tested module.
+- Adds three postprocessing detail levels while leaving camera output resolution unchanged.
+- Reuses processing buffers, avoiding per-frame scratch array allocation for cleanup and morphology.
+- Uses bilinear sampling in reduced detail modes.
+- Keeps the previous visual controls and sets Balanced as the default detail mode.
+- Fixes the cramped diagnostic panel width.
+- CPU/GPU delegate remains unchanged to isolate the quality/performance tradeoff.
+
+Synthetic Node benchmarks and logic tests are not a substitute for browser validation. Visual quality, FPS, and possible detail loss around hair and fingers remain to be assessed.
+
 ## Current stop point
 
-CamLayer v0.2.7 is in `main`. The user reported around 15 FPS after v0.2.6. The v0.2.7 diagnostic display has not yet been validated after deployment.
+CamLayer v0.2.8 is in `main` after committing this documentation. The user demonstrated the v0.2.7 performance breakdown; v0.2.8 still needs a real-camera comparison.
 
 ### First actions next session
 
-1. Confirm v0.2.7 deployed through Vercel and reload the page.
-2. Select the same webcam, `1280 × 720` if available, and identical visual settings to the prior test.
-3. Record **AI inference**, **Mask processing**, **Canvas rendering**, **Total processing**, and **Processing FPS** after the readings settle.
-4. Compare the results at Edge softness `0.00` and `−1.14` while holding every other setting fixed.
-5. Repeat at `640 × 360` to understand how costs scale with output resolution.
-6. Use the measured bottleneck to choose the next change. Investigate MediaPipe GPU delegate if inference dominates; optimize mask arrays / morphology if mask processing dominates; investigate alpha blur or canvas composition if canvas rendering dominates.
-7. Test visual quality and responsiveness before claiming any performance gain.
+1. Confirm Vercel displays **v0.2.8** and the Mask detail control.
+2. Select 1280 × 720 with fixed threshold 0.85, stability 1.75, and stabilization enabled.
+3. With Edge softness −0.07 and cleanup 0, record AI inference, mask processing, total processing, and FPS for **Full**, **Balanced**, and **Fast**.
+4. Repeat with softness 0 and cleanup 1.00 to compare the second known bottleneck.
+5. Inspect thin fingers, flyaway hairs, glasses and shoulders in each mode. Look for aliasing, loss of hair, or changed feather direction.
+6. Compare against the earlier v0.2.7 measurements. Keep Full as an available quality reference.
+7. Avoid changing GPU delegates or models before interpreting the per-stage improvements.
 
 ## Planned investigations after stabilization
 

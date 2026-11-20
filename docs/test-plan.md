@@ -1,11 +1,11 @@
 # CamLayer Test Plan
 
-**Next target:** v0.2.7 on the Windows / Intel Iris Xe development machine.  
-**Purpose:** Measure inference, mask processing, and canvas rendering separately to locate the bottleneck while preserving edge quality.
+**Next target:** v0.2.8 on the Windows / Intel Iris Xe development machine.  
+**Purpose:** Verify the new mask detail modes against the v0.2.7 measurements, with emphasis on preserved fine detail and signed edge behavior.
 
 ## Test setup
 
-1. Check that Vercel published v0.2.7 from `main`, then hard-refresh the page.
+1. Check that Vercel published v0.2.8 from `main`, then hard-refresh the page.
 2. Close other camera-using applications if they interfere with access.
 3. Use the same physical webcam, camera angle, background, and lighting for every comparison.
 4. Select `1280 × 720` and confirm the actual output size shown.
@@ -27,7 +27,7 @@ Start with the last known slow configuration:
 
 The earlier version showed **7.7 FPS / 144 ms** in one screenshot. This baseline is illustrative; a meaningful comparison requires matching camera and scene.
 
-Then test softness `0.00` and `+1.14` while holding all other values constant. Record all three stage timings and total processing time at every setting; also compare `640 × 360` with `1280 × 720`.
+Then compare `Full`, `Balanced`, and `Fast` with all other settings constant. Also repeat the known expensive cases: softness `−0.07` / cleanup `0`, and softness `0` / cleanup `1`. Record FPS, all stage timings, and fine-edge artifacts. Repeat at 640 × 360 if useful.
 
 ## Visual scenarios
 
@@ -55,7 +55,7 @@ Then test softness `0.00` and `+1.14` while holding all other values constant. R
 - Frame processing is improved compared with the v0.2.5 slowdown at matching settings.
 - Any residual slowness is measured and documented before new visual features are added.
 
-**About 15 FPS was reported for v0.2.6, without per-stage timings. No pass or fail result has been recorded for the new v0.2.7 diagnostics.**
+**v0.2.7 showed 41.4 FPS with both filters off, 17.7 FPS with softness −0.07, and 24.0 FPS with cleanup 1.00 in screenshot tests. v0.2.8 is not yet validated in the browser.**
 
 ## Later OBS test questions
 

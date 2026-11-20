@@ -21,3 +21,8 @@ button{border:0;border-radius:11px;padding:12px 19px;color:#0d1530;background:#8
 .timing-row+.timing-row{border-top:1px solid #283752}
 .timing-row strong{color:#edf5ff;font-variant-numeric:tabular-nums}
 .timing-note{color:#91a2c0;font-size:11px;line-height:1.55;margin:11px 0 0}
+
+/* v0.2.8: use the full metrics width for stage timings. */
+.timing-breakdown{grid-column:1/-1;width:100%;min-width:0}
+.timing-row span{min-width:0}
+.timing-row strong{white-space:nowrap;text-align:right}

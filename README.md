@@ -7,15 +7,15 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 **Visual quality reference:** Microsoft Teams. Comparable quality remains a target to evaluate, not a verified claim.
 
 **Live demo:** https://camlayer.vercel.app/  
-**Current code version:** v0.2.7  
-**Development status:** Working browser prototype. v0.2.6 was reported around 15 FPS in a later test. v0.2.7 introduces per-stage timing diagnostics, which still need live verification.
+**Current code version:** v0.2.8  
+**Development status:** Working browser prototype. Live v0.2.7 measurements identified mask postprocessing as the main performance bottleneck. v0.2.8 adds selectable mask-processing detail levels and buffer reuse; browser FPS and visual quality require verification.
 
 ## Current capabilities
 
 - Camera selection and browser permission handling, with start and stop controls.
 - Side-by-side camera and transparent-alpha previews.
 - MediaPipe Tasks Vision person segmentation processed in the browser.
-- Processing profiles of 640 × 360 and 1280 × 720.
+- Camera capture profiles of 640 × 360 and 1280 × 720, plus an independent mask postprocessing detail selector (Fast 480px, Balanced 640px, Full native mask resolution).
 - Adjustable mask threshold (0.15–0.85).
 - Signed Edge softness (−2.00 to +2.00), which erodes the alpha mask inward for negative values or dilates it outward for positive values, then feathers the result.
 - Edge cleanup (0.00–1.00) for spatial confidence-mask smoothing.
@@ -74,7 +74,10 @@ camlayer/
 ├── .gitignore
 ├── src/
 │   ├── main.js
+│   ├── mask-processor.mjs
 │   └── styles.css
+├── tests/
+│   └── mask-processor.test.mjs
 └── docs/
     ├── development-status.md
     ├── architecture.md
@@ -82,6 +85,29 @@ camlayer/
 ```
 
 Current processing and UI logic are in `src/main.js`. Further modularization is a future improvement, not a prerequisite for testing.
+
+## v0.2.8 mask processing optimization
+
+- Extracts reusable pure JavaScript postprocessing into `src/mask-processor.mjs`.
+- Adds a `Mask detail` selector: **Balanced (640 px)**, **Fast (480 px)** and **Full (native model mask resolution)**. This controls postprocessing resolution, **not the capture/output video resolution**.
+- Resamples confidence masks bilinearly before spatial processing in Fast and Balanced modes.
+- Reuses the confidence, morphology, filtering and RGBA buffers across frames; skips optional filtering when controls are zero.
+- Preserves motion-adaptive stabilization, signed inward/outward edge morphology, and alpha compositing.
+- Fixes the cramped timing breakdown layout.
+- Includes automated Node tests for mask directionality, image sizes, zero-filter fidelity, and buffer reuse.
+- Synthetic processor-only measurements showed lower postprocessing cost in Fast/Balanced modes; the **end-to-end result in the real browser has not yet been verified**.
+
+### Why this version was necessary
+
+The following v0.2.7 observations were provided at 1280 × 720 with threshold 0.85 and Edge stability 1.75:
+
+| Edge softness | Edge cleanup | Processing FPS | Mask processing |
+| ---: | ---: | ---: | ---: |
+| 0.00 | 0.00 | 41.4 | 10.9 ms |
+| −0.07 | 0.00 | 17.7 | 37.2 ms |
+| 0.00 | 1.00 | 24.0 | 26.6 ms |
+
+This isolates mask morphology and cleanup as major costs while AI inference remains relatively fast. Different scene frames and normal runtime variability still affect comparisons.
 
 ## v0.2.7 diagnostics
 
@@ -120,4 +146,4 @@ All source code, code comments, user-facing app strings, documentation, commit m
 
 **Project started:** November 4, 2026  
 **Last documented status:** November 4, 2026  
-**Next milestone:** Verify CamLayer v0.2.7 timing breakdown and locate the primary bottleneck before considering GPU or worker experiments.
+**Next milestone:** Compare Fast, Balanced and Full mask detail in the deployed v0.2.8 app, measuring FPS and fine-edge quality with otherwise unchanged settings.

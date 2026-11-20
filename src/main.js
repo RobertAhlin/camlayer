@@ -1,3 +1,5 @@
+import { MaskProcessor } from './mask-processor.mjs';
+
 const MEDIAPIPE_MODULE_URLS = [
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs',
   'https://unpkg.com/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs'
@@ -11,11 +13,12 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.7</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.8</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
       <label class="field">Processing resolution <select id="quality"><option value="640">640 × 360 · Fast</option><option value="1280">1280 × 720 · Quality</option></select></label>
+      <label class="field">Mask detail <select id="mask-detail"><option value="balanced">Balanced · 640px</option><option value="full">Full · Original</option><option value="fast">Fast · 480px</option></select></label>
       <button id="start">Start camera</button><button id="stop" class="secondary" disabled>Stop</button>
     </div>
     <div class="views">
@@ -37,6 +40,7 @@ const video = element('video');
 const output = element('output');
 const cameraSelect = element('camera');
 const qualitySelect = element('quality');
+const detailSelect = element('mask-detail');
 const startButton = element('start');
 const stopButton = element('stop');
 const thresholdInput = element('threshold');
@@ -59,15 +63,10 @@ let lastFrameTime = 0;
 let averageFps = 0;
 let smoothedTimes = null;
 let lastMetricsUpdate = 0;
-let previousMask = null;
-let spatialBuffer = null;
-let cleanupBuffer = null;
-let alphaBuffer = null;
-let morphologyRow = null;
-let morphologyOutput = null;
-let morphologyQueue = null;
+const maskProcessor = new MaskProcessor();
+let cachedMaskImage = null;
 const SETTINGS_KEY = 'camlayer.settings.v2';
-const DEFAULT_SETTINGS = Object.freeze({ camera: '', quality: '640', threshold: 0.35, softness: 0.28, cleanup: 0.30, stability: 0.50, stabilize: true, checker: true });
+const DEFAULT_SETTINGS = Object.freeze({ camera: '', quality: '640', detail: 'balanced', threshold: 0.35, softness: 0.28, cleanup: 0.30, stability: 0.50, stabilize: true, checker: true });
 let starting = false;
 const maskCanvas = document.createElement('canvas');
 const maskContext = maskCanvas.getContext('2d');
@@ -78,10 +77,11 @@ function readSettings() {
     const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}');
     if (!stored || typeof stored !== 'object') return { ...DEFAULT_SETTINGS };
     const settings = { ...DEFAULT_SETTINGS };
-    for (const key of ['camera', 'quality', 'threshold', 'softness', 'cleanup', 'stability', 'stabilize', 'checker']) {
+    for (const key of ['camera', 'quality', 'detail', 'threshold', 'softness', 'cleanup', 'stability', 'stabilize', 'checker']) {
       if (typeof stored[key] === typeof settings[key]) settings[key] = stored[key];
     }
     if (!['640', '1280'].includes(settings.quality)) settings.quality = '640';
+    if (!['full', 'balanced', 'fast'].includes(settings.detail)) settings.detail = 'balanced';
     for (const [key, low, high] of [['threshold', 0.15, 0.85], ['softness', -2.0, 2.0], ['cleanup', 0, 1], ['stability', 0, 2.0]]) {
       if (!Number.isFinite(settings[key])) settings[key] = DEFAULT_SETTINGS[key];
       settings[key] = Math.min(high, Math.max(low, settings[key]));
@@ -96,6 +96,7 @@ function readSettings() {
 const savedSettings = readSettings();
 cameraSelect.dataset.preferredCamera = savedSettings.camera;
 qualitySelect.value = savedSettings.quality;
+detailSelect.value = savedSettings.detail;
 for (const [input, name] of [[thresholdInput, 'threshold'], [softnessInput, 'softness'], [cleanupInput, 'cleanup'], [stabilityInput, 'stability']]) {
   input.value = String(savedSettings[name]);
   element(name + '-value').value = Number(input.value).toFixed(2);
@@ -108,6 +109,7 @@ function saveSettings() {
   const values = {
     camera: cameraSelect.value,
     quality: qualitySelect.value,
+    detail: detailSelect.value,
     threshold: Number(thresholdInput.value),
     softness: Number(softnessInput.value),
     cleanup: Number(cleanupInput.value),
@@ -132,6 +134,7 @@ function setControls(active) {
   stopButton.disabled = !active && !starting;
   cameraSelect.disabled = active || starting;
   qualitySelect.disabled = active || starting;
+  // Mask detail can be changed live without restarting the camera.
 }
 
 async function listCameras() {
@@ -174,165 +177,20 @@ async function getSegmenter() {
 }
 
 function updateMask(mask, width, height) {
-  const size = width * height;
-  if (maskCanvas.width !== width || maskCanvas.height !== height || !previousMask || previousMask.length !== size) {
-    maskCanvas.width = width;
-    maskCanvas.height = height;
-    previousMask = new Float32Array(mask);
-    spatialBuffer = new Float32Array(size);
-    cleanupBuffer = new Float32Array(size);
-    alphaBuffer = new Float32Array(size);
-    morphologyRow = new Float32Array(size);
-    morphologyOutput = new Float32Array(size);
-    morphologyQueue = new Int32Array(Math.max(width, height));
+  const image = maskProcessor.process(mask, width, height, {
+    detail: detailSelect.value,
+    threshold: Number(thresholdInput.value),
+    softness: Number(softnessInput.value),
+    cleanup: Number(cleanupInput.value),
+    stability: Number(stabilityInput.value),
+    stabilize: stabilizeInput.checked
+  }, output.width);
+  if (!cachedMaskImage || cachedMaskImage.width !== image.width || cachedMaskImage.height !== image.height) {
+    maskCanvas.width = image.width;
+    maskCanvas.height = image.height;
+    cachedMaskImage = new ImageData(image.data, image.width, image.height);
   }
-
-  const threshold = Number(thresholdInput.value);
-  const cleanup = Number(cleanupInput.value);
-  const stabilize = stabilizeInput.checked;
-  const data = maskContext.createImageData(width, height);
-
-  // Use an adaptive temporal filter. Minor confidence fluctuations are
-  // smoothed more aggressively, while larger changes (moving silhouette)
-  // rapidly reduce history weight to avoid visible trailing.
-  // The blend always responds to the current frame; it never freezes pixels.
-  const stability = Number(stabilityInput.value);
-  // Extend stability to 2.0 without allowing the mask to become frozen.
-  // Above 1.0, steady edges are filtered more strongly while movement
-  // detection remains sensitive to large, fast changes.
-  const quietHistory = stability <= 1
-    ? 0.45 + stability * 0.43
-    : 0.88 + (stability - 1) * 0.075;
-  const motionThreshold = 0.035 + Math.min(stability, 1) * 0.055;
-  const motionWindow = 0.12 + Math.min(stability, 1) * 0.08;
-  for (let i = 0; i < size; i++) {
-    const current = Math.min(1, Math.max(0, mask[i]));
-    const previous = previousMask[i];
-    const difference = Math.abs(current - previous);
-    const movement = Math.min(1, Math.max(0, (difference - motionThreshold) / motionWindow));
-    const historyWeight = stabilize ? quietHistory * (1 - movement * movement * (3 - 2 * movement)) : 0;
-    const blended = previous * historyWeight + current * (1 - historyWeight);
-    spatialBuffer[i] = blended;
-    previousMask[i] = blended;
-  }
-
-  // Edge cleanup is spatial denoising before alpha conversion.
-  // A separable box filter is much cheaper than a full 2D kernel.
-  // Radius grows up to 4 native mask pixels at maximum cleanup.
-  let values = spatialBuffer;
-  if (cleanup > 0.001) {
-    const radius = Math.max(1, Math.round(cleanup * 4));
-    const windowSize = radius * 2 + 1;
-    const horizontal = new Float32Array(size);
-    for (let y = 0; y < height; y++) {
-      const row = y * width;
-      let sum = 0;
-      for (let dx = -radius; dx <= radius; dx++) {
-        sum += spatialBuffer[row + Math.min(width - 1, Math.max(0, dx))];
-      }
-      for (let x = 0; x < width; x++) {
-        horizontal[row + x] = sum / windowSize;
-        const leaving = Math.max(0, x - radius);
-        const entering = Math.min(width - 1, x + radius + 1);
-        sum += spatialBuffer[row + entering] - spatialBuffer[row + leaving];
-      }
-    }
-    for (let x = 0; x < width; x++) {
-      let sum = 0;
-      for (let dy = -radius; dy <= radius; dy++) {
-        sum += horizontal[Math.min(height - 1, Math.max(0, dy)) * width + x];
-      }
-      for (let y = 0; y < height; y++) {
-        const index = y * width + x;
-        const blurred = sum / windowSize;
-        cleanupBuffer[index] = spatialBuffer[index] * (1 - cleanup) + blurred * cleanup;
-        const leaving = Math.max(0, y - radius);
-        const entering = Math.min(height - 1, y + radius + 1);
-        sum += horizontal[entering * width + x] - horizontal[leaving * width + x];
-      }
-    }
-    values = cleanupBuffer;
-  }
-
-  // Convert confidence to alpha once. Edge softness will change the
-  // geometry of this alpha mask instead of approximating it with a threshold.
-  const signedSoftness = Number(softnessInput.value);
-  const transition = 0.15;
-  const low = threshold - transition / 2;
-  for (let i = 0; i < size; i++) {
-    const t = Math.max(0, Math.min(1, (values[i] - low) / transition));
-    alphaBuffer[i] = t * t * (3 - 2 * t);
-  }
-
-  // Morphological expansion/contraction uses a monotonic sliding-window
-  // deque. Unlike nested radius loops, complexity stays linear in mask size.
-  // Boundary windows are clipped to valid pixels (no out-of-frame samples).
-  const outputWidth = output.width || width;
-  const desiredNativeRadius = Math.abs(signedSoftness) * 12 * width / outputWidth;
-  const radius = Math.min(8, Math.ceil(desiredNativeRadius));
-  const strength = Math.min(1, desiredNativeRadius);
-  let finalAlpha = alphaBuffer;
-  if (radius > 0 && strength > 0) {
-    const expand = signedSoftness > 0;
-    const queue = morphologyQueue;
-
-    // Horizontal min/max sliding windows.
-    for (let y = 0; y < height; y++) {
-      const row = y * width;
-      let head = 0;
-      let tail = 0;
-      let next = 0;
-      for (let x = 0; x < width; x++) {
-        const right = Math.min(width - 1, x + radius);
-        while (next <= right) {
-          const value = alphaBuffer[row + next];
-          while (tail > head) {
-            const previous = alphaBuffer[row + queue[tail - 1]];
-            if (expand ? previous > value : previous < value) break;
-            tail--;
-          }
-          queue[tail++] = next++;
-        }
-        const left = x - radius;
-        while (head < tail && queue[head] < left) head++;
-        morphologyRow[row + x] = alphaBuffer[row + queue[head]];
-      }
-    }
-
-    // Vertical sliding windows over the horizontal result.
-    for (let x = 0; x < width; x++) {
-      let head = 0;
-      let tail = 0;
-      let next = 0;
-      for (let y = 0; y < height; y++) {
-        const bottom = Math.min(height - 1, y + radius);
-        while (next <= bottom) {
-          const value = morphologyRow[next * width + x];
-          while (tail > head) {
-            const previous = morphologyRow[queue[tail - 1] * width + x];
-            if (expand ? previous > value : previous < value) break;
-            tail--;
-          }
-          queue[tail++] = next++;
-        }
-        const top = y - radius;
-        while (head < tail && queue[head] < top) head++;
-        const index = y * width + x;
-        const extremum = morphologyRow[queue[head] * width + x];
-        morphologyOutput[index] = alphaBuffer[index] * (1 - strength) + extremum * strength;
-      }
-    }
-    finalAlpha = morphologyOutput;
-  }
-
-  for (let i = 0; i < size; i++) {
-    const offset = i * 4;
-    data.data[offset] = 255;
-    data.data[offset + 1] = 255;
-    data.data[offset + 2] = 255;
-    data.data[offset + 3] = Math.round(finalAlpha[i] * 255);
-  }
-  maskContext.putImageData(data, 0, 0);
+  maskContext.putImageData(cachedMaskImage, 0, 0);
 }
 
 function updatePerformanceMetrics(inferenceMs, maskMs, canvasMs, totalMs, finished) {
@@ -437,13 +295,8 @@ async function start() {
     output.width = video.videoWidth;
     output.height = video.videoHeight;
     element('dimensions').textContent = `${output.width}×${output.height}`;
-    previousMask = null;
-    spatialBuffer = null;
-    cleanupBuffer = null;
-    alphaBuffer = null;
-    morphologyRow = null;
-    morphologyOutput = null;
-    morphologyQueue = null;
+    maskProcessor.reset();
+    cachedMaskImage = null;
     averageFps = 0;
     smoothedTimes = null;
     lastMetricsUpdate = 0;
@@ -475,13 +328,8 @@ function stop() {
   outputContext.clearRect(0, 0, output.width, output.height);
   originalStage.classList.remove('active');
   outputStage.classList.remove('active');
-  previousMask = null;
-  spatialBuffer = null;
-  cleanupBuffer = null;
-  alphaBuffer = null;
-  morphologyRow = null;
-  morphologyOutput = null;
-  morphologyQueue = null;
+  maskProcessor.reset();
+  cachedMaskImage = null;
   element('fps').textContent = '—';
   element('latency').textContent = '—';
   element('dimensions').textContent = '—';
@@ -499,9 +347,10 @@ stopButton.addEventListener('click', stop);
 for (const [input, label] of [[thresholdInput, 'threshold-value'], [softnessInput, 'softness-value'], [cleanupInput, 'cleanup-value'], [stabilityInput, 'stability-value']]) {
   input.addEventListener('input', () => { element(label).value = Number(input.value).toFixed(2); saveSettings(); });
 }
-for (const control of [cameraSelect, qualitySelect, stabilizeInput, checkerInput]) {
+for (const control of [cameraSelect, qualitySelect, detailSelect, stabilizeInput, checkerInput]) {
   control.addEventListener('change', saveSettings);
 }
+detailSelect.addEventListener('change', () => { maskProcessor.reset(); cachedMaskImage = null; });
 checkerInput.addEventListener('change', () => outputStage.classList.toggle('checker', checkerInput.checked));
 window.addEventListener('pagehide', () => {
   running = false;

@@ -1,6 +1,6 @@
 # Current Architecture
 
-**As implemented in v0.2.7.** This describes the working browser prototype, not a completed OBS plugin.
+**As implemented in v0.2.8.** This describes the working browser prototype, not a completed OBS plugin.
 
 ## Data flow
 
@@ -12,6 +12,8 @@ HTMLVideoElement
 MediaPipe ImageSegmenter (VIDEO mode, CPU delegate)
     |
 Foreground confidence mask
+    |
+Optional bilinear resampling to postprocessing detail resolution
     |
 Adaptive per-pixel temporal smoothing
     |
@@ -28,12 +30,16 @@ source-in composition with webcam frame
 Transparent output canvas + performance indicators
 ```
 
+Mask work resolution is independently selectable: Full (native mask width), Balanced (capped at 640px) or Fast (capped at 480px). The final canvas retains the actual camera/output dimensions; the smaller mask is upscaled by canvas drawing and is then composited with the full camera image.
+
 The app selects the second confidence mask for multi-channel models or the first when the model returns a single confidence mask.
 
 ## Implementation files
 
 - `index.html`: application entry point and resource links.
-- `src/main.js`: UI, stored settings, webcam lifecycle, MediaPipe loading, segmentation, postprocessing, rendering, and per-stage timing.
+- `src/main.js`: UI, stored settings, webcam lifecycle, MediaPipe loading, composition, and per-stage timing.
+- `src/mask-processor.mjs`: reusable CPU mask processor with separate work resolution, temporal smoothing, cleanup, morphology, and RGBA output.
+- `tests/mask-processor.test.mjs`: automated behavior tests for the processor.
 - `src/styles.css`: responsive application styling.
 - `vercel.json`: static hosting configuration.
 - `README.md`: project overview.
