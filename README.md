@@ -7,8 +7,25 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 **Visual quality reference:** Microsoft Teams. Comparable quality remains a target to evaluate, not a verified claim.
 
 **Live demo:** https://camlayer.vercel.app/  
-**Current code version:** v0.4.2  
-**Development status:** Working browser prototype with tested visual quality and timed stability diagnostics. v0.3.0 introduces experimental OBS Browser Source compatibility tests; OBS camera access is not yet verified.
+**Browser demo version:** v0.4.2  
+**Native OBS plugin:** bootstrap source code added; build and model integration pending  
+**Development status:** Browser-based segmentation and the temporary OBS Chroma Output have been tested. The long-term product target is now a native OBS video filter. Its first pass-through scaffold is committed but has not yet been compiled or installed.
+
+## Native OBS plugin roadmap (primary product direction)
+
+The long-term deliverable is **CamLayer AI Background Removal**, a native OBS Studio video filter applied directly to a camera source. It must not require Chrome, green-screen chroma keying, a local Node.js server, or access to camera hardware from OBS's embedded browser.
+
+A first native **pass-through bootstrap** is now available in [native/obs-plugin](native/obs-plugin/README.md), with C source, CMake and English UI strings. Its only implemented behavior is to register an asynchronous video filter and return the input video frame unchanged. This is not yet tested with a compiler or OBS and **does not perform AI segmentation**.
+
+Planned steps:
+
+1. Pin the OBS/libobs toolchain and build a Windows artifact in GitHub Actions.
+2. Test native filter registration and camera pass-through on a machine where plugins can be installed.
+3. Select and integrate a native-compatible segmentation runtime and model.
+4. Implement alpha compositing, port the edge controls and optimize latency/performance.
+5. Add packaging and distribution with a clear permissions/install procedure.
+
+The development workstation is IT-managed. Remote compilation on GitHub does **not** bypass software installation restrictions. Any deployment to this machine must follow its IT policy.
 
 ## Current capabilities
 
@@ -289,4 +306,4 @@ All source code, code comments, user-facing app strings, documentation, commit m
 
 **Project started:** November 4, 2026  
 **Last documented status:** November 20, 2026  
-**Next milestone:** Verify the no-install Chroma Output in Chrome + OBS Window Capture, then design a browser-only real-alpha transport that does not require local software installation.
+**Next milestone:** Establish a reproducible native OBS plugin Windows build and verify that the pass-through filter registers, before integrating AI segmentation.
