@@ -1,6 +1,6 @@
 # CamLayer Test Plan
 
-**Next target:** v0.2.8 on the Windows / Intel Iris Xe development machine.  
+**Next target:** v0.2.8 frame-cadence verification and motion-quality regression tests.  
 **Purpose:** Verify the new mask detail modes against the v0.2.7 measurements, with emphasis on preserved fine detail and signed edge behavior.
 
 ## Test setup
@@ -56,6 +56,25 @@ Then compare `Full`, `Balanced`, and `Fast` with all other settings constant. Al
 - Any residual slowness is measured and documented before new visual features are added.
 
 **v0.2.7 showed 41.4 FPS with both filters off, 17.7 FPS with softness −0.07, and 24.0 FPS with cleanup 1.00 in screenshot tests. v0.2.8 is not yet validated in the browser.**
+
+## Verified live comparison (November 20, 2026)
+
+The browser snapshots show the following at 1280 × 720, threshold 0.56, softness −0.17, cleanup 1.00 and stability 2.00:
+
+| Detail | FPS shown | Total ms | Inference ms | Mask ms |
+| --- | ---: | ---: | ---: | ---: |
+| Full | 16.3 | 61 | 14.6 | 45.9 |
+| Balanced | 42.8 | 23 | 12.5 | 10.4 |
+| Fast | 50.3 | 20 | 13.7 | 5.7 |
+
+Interpret the displayed FPS as processing throughput, not unique camera capture FPS. The existing `video.currentTime` gate can allow repeated processing of the same captured frame. Verify actual camera frame delivery with `requestVideoFrameCallback` or another explicit new-frame signal.
+
+### Further checks
+
+- Use the same person, camera, lighting, and settings while moving fingers and turning the head.
+- Compare visible hair and ear artifacts across Fast, Balanced and Full.
+- Record unique captured frames, dropped frames and processed updates over an interval where possible.
+- Do not claim 50 FPS capture from the present screenshots.
 
 ## Later OBS test questions
 
