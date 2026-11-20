@@ -3,8 +3,8 @@
 **Last updated:** November 20, 2026  
 **Repository:** `RobertAhlin/camlayer`  
 **Deployed URL:** https://camlayer.vercel.app/  
-**Code version:** v0.3.0  
-**Last implementation commit before this documentation update:** `bba74d7691f071bf3ba1cdec762281dca0f857d0`  
+**Code version:** v0.4.0  
+**Latest feature commit before this documentation update:** `a4220943d51bbd5e911f02bedcd69f27d0839ad6`  
 **Verification:** v0.2.7 measurements confirmed mask postprocessing as the primary bottleneck. The v0.2.8 detail modes are now verified to run in the browser, with a significant processing-speed improvement. Fine-detail motion tests remain open.
 
 ## Product objective
@@ -138,6 +138,29 @@ Balanced reduced mask processing from 45.9 to 10.4 ms compared with Full in thes
 - Kept the existing browser application, selected model and Balanced default intact.
 
 **Next test:** In OBS create a Browser Source for `/obs-test.html`, confirm that its background is truly transparent, then test the `?mode=obs` source. If camera permissions fail, investigate a local browser-to-OBS transfer path before committing to a native plugin.
+
+## v0.4.0: Local OBS Bridge prototype
+
+The first OBS source trial confirmed that alpha compositing works, but OBS embedded browser showed `Permission denied` for camera access. Chrome was able to capture and segment the camera independently.
+
+The experimental next step is a local relay:
+
+- `bridge/server.mjs` starts a loopback HTTP and WebSocket server on port 8765.
+- `/?mode=bridge&token=...` runs the normal CamLayer UI in Chrome and sends transparent WebP frames.
+- `/bridge/output.html?token=...` runs in OBS Browser Source and renders the received frame with alpha.
+- A random per-start token limits unauthorized local connection attempts; the relay also checks the request origin.
+- The OBS source never invokes `getUserMedia`, so it does not require webcam permission.
+- The relay favors the newest image over buffering indefinitely, and clears on stop or disconnection.
+
+**Not yet validated:** Windows installation, Webcam-to-OBS frame transport, WebP alpha quality, encoding overhead, and overall end-to-end latency. The browser prototype remains the known-good fallback. This bridge is NOT implemented on Vercel.
+
+### Next actions
+
+1. Clone/pull latest repository to the Windows machine.
+2. Install Node.js 20+ if necessary, run `cd bridge`, `npm install`, `npm start`.
+3. Open the generated Chrome sender URL, start the camera, then add the generated OBS Browser Source URL (1280 × 720).
+4. Verify transparency over a visible OBS background and check movement, image quality, lag, and CPU load.
+5. Record any connection, decoding, or permission errors; do not claim completed OBS integration until tested.
 
 ## Current stop point
 
