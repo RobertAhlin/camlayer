@@ -1,4 +1,5 @@
 import { MaskProcessor } from './mask-processor.mjs';
+import { FrameTiming } from './frame-timing.mjs';
 
 const MEDIAPIPE_MODULE_URLS = [
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs',
@@ -13,7 +14,7 @@ if (!app) throw new Error('Application root is missing.');
 
 app.innerHTML = `
   <div class="shell">
-    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.8</span></header>
+    <header><div class="brand"><div class="brand-symbol">C</div>CamLayer</div><span class="version">EXPERIMENTAL · v0.2.9</span></header>
     <section class="hero"><div class="eyebrow">AI-powered camera compositing</div><h1>Your camera. Without the background.</h1><p>Real-time person segmentation, processed privately in your browser. Preview a transparent camera layer before we explore OBS integration.</p></section>
     <div class="toolbar">
       <label class="field">Camera <select id="camera"><option value="">Default camera</option></select></label>
@@ -27,7 +28,7 @@ app.innerHTML = `
     </div>
     <div class="bottom">
       <section class="settings"><h2 class="section-title">Refine your image</h2><div class="sliders"><div class="setting"><label class="slider-label" for="threshold">Mask threshold <output id="threshold-value">0.35</output></label><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.35"></div><div class="setting"><label class="slider-label" for="softness">Edge softness <output id="softness-value">0.28</output></label><input id="softness" type="range" min="-2.00" max="2.00" step="0.01" value="0.28"></div><div class="setting"><label class="slider-label" for="cleanup">Edge cleanup <output id="cleanup-value">0.30</output></label><input id="cleanup" type="range" min="0" max="1" step="0.05" value="0.30"><p class="setting-help">Reduces mask noise and small artifacts before feathering. High values may remove fine details.</p></div><div class="setting"><label class="slider-label" for="stability">Edge stability <output id="stability-value">0.50</output></label><input id="stability" type="range" min="0" max="2.00" step="0.05" value="0.50"><p class="setting-help">Reduces static edge flicker while preserving faster response to larger movements.</p></div></div><label class="checkbox"><input id="checker" type="checkbox" checked> Show checkerboard behind the transparent output</label><label class="checkbox"><input id="stabilize" type="checkbox" checked> Stabilize mask between frames</label></section>
-      <section class="metrics"><h2 class="section-title">Live performance</h2><div class="metric-grid"><div class="metric"><strong id="fps">—</strong><span>Processing FPS</span></div><div class="metric"><strong id="latency">—</strong><span>Total processing (ms)</span></div><div class="metric"><strong id="dimensions">—</strong><span>Output size</span></div><div class="timing-breakdown" aria-label="Processing time breakdown"><div class="timing-row"><span>AI inference</span><strong id="inference-time">—</strong></div><div class="timing-row"><span>Mask processing</span><strong id="mask-time">—</strong></div><div class="timing-row"><span>Canvas rendering</span><strong id="canvas-time">—</strong></div><p class="timing-note">Smoothed milliseconds per processed frame. Includes mask extraction in mask processing; totals may include small additional overhead.</p></div></div><p id="status" class="status"><span class="dot"></span><span id="status-text">Ready to start. Camera permission is requested only after clicking Start.</span></p></section>
+      <section class="metrics"><h2 class="section-title">Live performance</h2><div class="metric-grid"><div class="metric"><strong id="presented-fps">—</strong><span>Presented FPS</span></div><div class="metric"><strong id="fps">—</strong><span>Processed FPS</span></div><div class="metric"><strong id="latency">—</strong><span>Total processing (ms)</span></div><div class="metric"><strong id="dimensions">—</strong><span>Output size</span></div><div class="timing-breakdown" aria-label="Processing time breakdown"><div class="timing-row"><span>AI inference</span><strong id="inference-time">—</strong></div><div class="timing-row"><span>Mask processing</span><strong id="mask-time">—</strong></div><div class="timing-row"><span>Canvas rendering</span><strong id="canvas-time">—</strong></div><p class="timing-note">Smoothed milliseconds per processed frame. Includes mask extraction in mask processing; totals may include small additional overhead.</p></div><p class="cadence-info" id="cadence-info">Frame synchronization will be detected when the camera starts.</p><div class="stability-panel"><h3>Stability test</h3><div class="stability-actions"><label class="field">Duration <select id="test-duration"><option value="2">2 minutes</option><option value="5">5 minutes</option><option value="10" selected>10 minutes</option></select></label><button id="test-start" class="secondary" disabled>Start test</button><button id="test-stop" class="secondary" disabled>End test</button></div><p id="test-results" class="test-results" aria-live="polite">Start the camera to run a test. Keep this tab visible.</p></div></div><p id="status" class="status"><span class="dot"></span><span id="status-text">Ready to start. Camera permission is requested only after clicking Start.</span></p></section>
     </div><p class="privacy">Privacy first: webcam frames stay in this browser tab. Model and runtime files are downloaded from external hosts on first use. No recording, upload, or OBS integration is included in this build.</p>
   </div>`;
 
@@ -43,6 +44,10 @@ const qualitySelect = element('quality');
 const detailSelect = element('mask-detail');
 const startButton = element('start');
 const stopButton = element('stop');
+const testStartButton = element('test-start');
+const testStopButton = element('test-stop');
+const testDurationSelect = element('test-duration');
+const testResults = element('test-results');
 const thresholdInput = element('threshold');
 const softnessInput = element('softness');
 const cleanupInput = element('cleanup');
@@ -58,11 +63,13 @@ if (!outputContext) throw new Error('Canvas 2D is unavailable.');
 let stream = null;
 let segmenter = null;
 let running = false;
-let frameId = 0;
-let lastFrameTime = 0;
-let averageFps = 0;
+let frameId = null;
+let frameMode = 'video';
+let lastPlaybackTime = -1;
+let lastFallbackAt = 0;
+let diagnosticsInterval = null;
 let smoothedTimes = null;
-let lastMetricsUpdate = 0;
+const frameTiming = new FrameTiming();
 const maskProcessor = new MaskProcessor();
 let cachedMaskImage = null;
 const SETTINGS_KEY = 'camlayer.settings.v2';
@@ -193,7 +200,7 @@ function updateMask(mask, width, height) {
   maskContext.putImageData(cachedMaskImage, 0, 0);
 }
 
-function updatePerformanceMetrics(inferenceMs, maskMs, canvasMs, totalMs, finished) {
+function updatePerformanceMetrics(inferenceMs, maskMs, canvasMs, totalMs) {
   const alpha = 0.22;
   if (!smoothedTimes) {
     smoothedTimes = { inferenceMs, maskMs, canvasMs, totalMs };
@@ -202,22 +209,33 @@ function updatePerformanceMetrics(inferenceMs, maskMs, canvasMs, totalMs, finish
       smoothedTimes[key] = smoothedTimes[key] * (1 - alpha) + value * alpha;
     }
   }
+}
 
-  const delta = lastFrameTime ? finished - lastFrameTime : 0;
-  lastFrameTime = finished;
-  if (delta > 0) {
-    const instantaneousFps = 1000 / delta;
-    averageFps = averageFps === 0 ? instantaneousFps : averageFps * 0.8 + instantaneousFps * 0.2;
+function testStatusText(summary) {
+  if (!summary) return 'Start the camera to run a test. Keep this tab visible.';
+  const elapsed = Math.floor(summary.elapsedMs / 1000);
+  const total = Math.floor(summary.durationMs / 1000);
+  const formatTime = (seconds) => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+  const statusLabel = summary.status === 'running' ? 'Running' : summary.status === 'completed' ? 'Completed' : 'Stopped early';
+  const warning = summary.backgrounded ? ' Tab was hidden during the test; results may be affected.' : '';
+  return `${statusLabel} · ${formatTime(elapsed)} / ${formatTime(total)} · Avg processed ${summary.avgProcessedFps.toFixed(1)} FPS · Mean processing ${summary.avgProcessingMs.toFixed(1)} ms · Worst ${summary.maxMs.toFixed(1)} ms · Skipped presented frames ${summary.skipped} · Long gaps (>250 ms) ${summary.stalls}.${warning}`;
+}
+
+function refreshPerformanceDisplay() {
+  const now = performance.now();
+  const rates = frameTiming.rates(now);
+  element('presented-fps').textContent = rates.presentedFps === null ? '—' : rates.presentedFps.toFixed(1);
+  element('fps').textContent = rates.processedFps === null ? '—' : rates.processedFps.toFixed(1);
+  if (smoothedTimes) {
+    element('latency').textContent = smoothedTimes.totalMs.toFixed(0);
+    element('inference-time').textContent = smoothedTimes.inferenceMs.toFixed(1) + ' ms';
+    element('mask-time').textContent = smoothedTimes.maskMs.toFixed(1) + ' ms';
+    element('canvas-time').textContent = smoothedTimes.canvasMs.toFixed(1) + ' ms';
   }
-
-  // Limit DOM writes so monitoring does not significantly affect processing.
-  if (finished - lastMetricsUpdate < 350) return;
-  lastMetricsUpdate = finished;
-  element('fps').textContent = averageFps ? averageFps.toFixed(1) : '—';
-  element('latency').textContent = smoothedTimes.totalMs.toFixed(0);
-  element('inference-time').textContent = smoothedTimes.inferenceMs.toFixed(1) + ' ms';
-  element('mask-time').textContent = smoothedTimes.maskMs.toFixed(1) + ' ms';
-  element('canvas-time').textContent = smoothedTimes.canvasMs.toFixed(1) + ' ms';
+  const summary = frameTiming.testSummary(now);
+  testResults.textContent = summary ? testStatusText(summary) : running ? 'Camera ready. Choose a duration and start a stability test.' : 'Start the camera to run a test. Keep this tab visible.';
+  testStartButton.disabled = !running || summary?.status === 'running';
+  testStopButton.disabled = !running || summary?.status !== 'running';
 }
 
 function renderFrame() {
@@ -249,24 +267,65 @@ function renderFrame() {
     result.close();
   }
   const finished = performance.now();
-  updatePerformanceMetrics(afterInference - started, afterMask - afterInference, afterCanvas - afterMask, finished - started, finished);
+  const totalMs = finished - started;
+  updatePerformanceMetrics(afterInference - started, afterMask - afterInference, afterCanvas - afterMask, totalMs);
+  frameTiming.onProcessed(finished, totalMs);
 }
 
-function loop() {
+function handleFrameError(error) {
+  console.error('CamLayer frame processing failed:', error);
+  stop();
+  status(error instanceof Error ? error.message : 'Processing failed.', 'error');
+}
+
+function scheduleFrame() {
+  if (!running) return;
+  if (frameMode === 'video') {
+    // Called once when a NEW frame is sent to the compositor.
+    frameId = video.requestVideoFrameCallback((now, metadata) => {
+      frameId = null;
+      if (!running) return;
+      try {
+        if (frameTiming.onPresented(now, metadata.presentedFrames)) renderFrame();
+      } catch (error) {
+        handleFrameError(error);
+        return;
+      }
+      scheduleFrame();
+    });
+  } else {
+    frameId = requestAnimationFrame(fallbackFrame);
+  }
+}
+
+function fallbackFrame(now) {
+  frameId = null;
   if (!running) return;
   try {
-    if (video.currentTime !== lastVideoTime) {
-      lastVideoTime = video.currentTime;
-      renderFrame();
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      const count = video.getVideoPlaybackQuality?.().totalVideoFrames;
+      if (Number.isSafeInteger(count) && count > 0) {
+        if (frameTiming.onPresented(now, count)) renderFrame();
+      } else if (now - lastFallbackAt >= 33 && video.currentTime !== lastPlaybackTime) {
+        // Best-effort fallback: currentTime alone does not identify unique frames.
+        lastFallbackAt = now;
+        lastPlaybackTime = video.currentTime;
+        if (frameTiming.onPresented(now)) renderFrame();
+      }
     }
   } catch (error) {
-    stop();
-    status(error instanceof Error ? error.message : 'Processing failed.', 'error');
+    handleFrameError(error);
     return;
   }
-  frameId = requestAnimationFrame(loop);
+  scheduleFrame();
 }
-let lastVideoTime = -1;
+
+function cancelScheduledFrame() {
+  if (frameId === null) return;
+  if (frameMode === 'video') video.cancelVideoFrameCallback(frameId);
+  else cancelAnimationFrame(frameId);
+  frameId = null;
+}
 
 async function start() {
   if (running || starting) return;
@@ -297,16 +356,21 @@ async function start() {
     element('dimensions').textContent = `${output.width}×${output.height}`;
     maskProcessor.reset();
     cachedMaskImage = null;
-    averageFps = 0;
+    frameTiming.reset();
     smoothedTimes = null;
-    lastMetricsUpdate = 0;
-    lastFrameTime = 0;
-    lastVideoTime = -1;
+    lastPlaybackTime = -1;
+    lastFallbackAt = 0;
+    frameMode = typeof video.requestVideoFrameCallback === 'function' && typeof video.cancelVideoFrameCallback === 'function' ? 'video' : 'fallback';
+    element('cadence-info').textContent = frameMode === 'video'
+      ? 'New camera frames only · browser frame callback. Skipped frames count compositor frames not processed.'
+      : 'Estimated frame rate · older browser fallback; one-to-one frame processing is not guaranteed.';
     running = true;
     originalStage.classList.add('active');
     outputStage.classList.add('active');
     status('Camera active. Background removal is running locally.', 'running');
-    frameId = requestAnimationFrame(loop);
+    scheduleFrame();
+    diagnosticsInterval = window.setInterval(refreshPerformanceDisplay, 500);
+    refreshPerformanceDisplay();
   } catch (error) {
     console.error('CamLayer startup failed:', error);
     stop();
@@ -320,7 +384,10 @@ async function start() {
 
 function stop() {
   running = false;
-  cancelAnimationFrame(frameId);
+  cancelScheduledFrame();
+  if (diagnosticsInterval !== null) window.clearInterval(diagnosticsInterval);
+  diagnosticsInterval = null;
+  frameTiming.finishTest(performance.now(), 'interrupted');
   stream?.getTracks().forEach((track) => track.stop());
   stream = null;
   video.pause();
@@ -331,19 +398,30 @@ function stop() {
   maskProcessor.reset();
   cachedMaskImage = null;
   element('fps').textContent = '—';
+  element('presented-fps').textContent = '—';
   element('latency').textContent = '—';
   element('dimensions').textContent = '—';
   for (const id of ['inference-time', 'mask-time', 'canvas-time']) element(id).textContent = '—';
   smoothedTimes = null;
-  averageFps = 0;
-  lastFrameTime = 0;
-  lastMetricsUpdate = 0;
   setControls(false);
+  refreshPerformanceDisplay();
   status('Camera stopped.');
 }
 
 startButton.addEventListener('click', () => { void start(); });
 stopButton.addEventListener('click', stop);
+testStartButton.addEventListener('click', () => {
+  if (!running) return;
+  frameTiming.startTest(performance.now(), Number(testDurationSelect.value));
+  refreshPerformanceDisplay();
+});
+testStopButton.addEventListener('click', () => {
+  frameTiming.finishTest(performance.now(), 'stopped');
+  refreshPerformanceDisplay();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) frameTiming.noteHidden();
+});
 for (const [input, label] of [[thresholdInput, 'threshold-value'], [softnessInput, 'softness-value'], [cleanupInput, 'cleanup-value'], [stabilityInput, 'stability-value']]) {
   input.addEventListener('input', () => { element(label).value = Number(input.value).toFixed(2); saveSettings(); });
 }
@@ -354,7 +432,9 @@ detailSelect.addEventListener('change', () => { maskProcessor.reset(); cachedMas
 checkerInput.addEventListener('change', () => outputStage.classList.toggle('checker', checkerInput.checked));
 window.addEventListener('pagehide', () => {
   running = false;
-  cancelAnimationFrame(frameId);
+  cancelScheduledFrame();
+  if (diagnosticsInterval !== null) window.clearInterval(diagnosticsInterval);
+  frameTiming.finishTest(performance.now(), 'interrupted');
   stream?.getTracks().forEach((track) => track.stop());
   segmenter?.close();
 });

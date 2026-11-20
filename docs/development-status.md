@@ -3,7 +3,7 @@
 **Last updated:** November 20, 2026  
 **Repository:** `RobertAhlin/camlayer`  
 **Deployed URL:** https://camlayer.vercel.app/  
-**Code version:** v0.2.8  
+**Code version:** v0.2.9  
 **Last implementation commit before this documentation update:** `bba74d7691f071bf3ba1cdec762281dca0f857d0`  
 **Verification:** v0.2.7 measurements confirmed mask postprocessing as the primary bottleneck. The v0.2.8 detail modes are now verified to run in the browser, with a significant processing-speed improvement. Fine-detail motion tests remain open.
 
@@ -116,17 +116,30 @@ Balanced reduced mask processing from 45.9 to 10.4 ms compared with Full in thes
 
 **Frame-rate caveat:** The loop uses `requestAnimationFrame` plus `video.currentTime`, not an explicit new-camera-frame callback. `currentTime` can advance between unique captured video frames, so 50.3 processing FPS is not evidence the webcam supplied 50.3 distinct frames per second. Fix this measurement and avoid redundant inference next.
 
+## v0.2.9: camera frame cadence and repeatable stability testing
+
+- Replaced the old `requestAnimationFrame` + `video.currentTime` gate with `requestVideoFrameCallback` on supporting browsers.
+- Reads `presentedFrames` metadata to prevent repeated processing of the same presented frame and to count frames skipped between callbacks.
+- Uses a cautious fallback when video-frame callbacks are unavailable; non-metadata fallback FPS is labeled as estimated.
+- Separates Presented FPS from Processed FPS and keeps detailed per-stage timings.
+- Adds a 2, 5 or 10 minute stability test with elapsed time, average processed FPS, mean/worst processing time, missed presented frames and long processing gaps.
+- Flags tests where the document becomes hidden, because background tab throttling can distort results.
+- Keeps `Balanced` as the default mask detail, without changing MediaPipe or the mask processing algorithm.
+
+**Verification outstanding:** Confirm v0.2.9 startup, callback behavior, camera FPS labels and at least one complete stability test in the browser. A lower processed FPS than the previous 50.3 figure is expected if that figure included repeated video frames.
+
 ## Current stop point
 
 CamLayer v0.2.8 is in `main` after committing this documentation. The user demonstrated the v0.2.7 performance breakdown; v0.2.8 still needs a real-camera comparison.
 
 ### Next actions
 
-1. Introduce `requestVideoFrameCallback` for unique captured frames when supported, with a safe fallback.
-2. Separate actual camera-frame throughput from processing time / effective output update cadence in diagnostics.
-3. Compare Balanced and Fast while moving the head and fingers; check hair and shoulder edges and whether the background patch near the head persists.
-4. If needed, add a controlled test scene and collect time-averaged performance statistics instead of single snapshots.
-5. Keep Balanced as the current default until dynamic-quality tests support a change.
+1. Confirm the deployed version label reads v0.2.9.
+2. Use the 1280 × 720 camera mode and Balanced mask detail.
+3. Verify Presented FPS and Processed FPS represent new video frames, not animation repaint cycles.
+4. Run a 2-minute test first to check controls, then run a 10-minute test while keeping the tab visible.
+5. Record average FPS, mean/worst processing time, skipped frames, long gaps and any visible stutter during head/hand motion.
+6. If timing is stable, move to an initial OBS compatibility test without changing the segmentation model.
 
 ## Planned investigations after stabilization
 

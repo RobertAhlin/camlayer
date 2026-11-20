@@ -26,3 +26,15 @@ button{border:0;border-radius:11px;padding:12px 19px;color:#0d1530;background:#8
 .timing-breakdown{grid-column:1/-1;width:100%;min-width:0}
 .timing-row span{min-width:0}
 .timing-row strong{white-space:nowrap;text-align:right}
+
+/* v0.2.9: clearly separate source cadence from processing throughput. */
+.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.metric strong{font-variant-numeric:tabular-nums}
+.cadence-info{font-size:11px;line-height:1.55;color:#9aabc8;margin:14px 0 0}
+.stability-panel{margin-top:15px;padding:15px 16px;border:1px solid #2a3855;border-radius:12px;background:#172238}
+.stability-panel h3{font-size:13px;font-weight:700;margin:0 0 14px}
+.stability-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.stability-actions .field select{min-width:135px;max-width:175px}
+.stability-actions button{font-size:12px;min-height:44px;padding:10px 13px}
+.test-results{font-size:12px;line-height:1.65;color:#b9c8de;margin:12px 0 0}
+@media(max-width:560px){.stability-actions .field,.stability-actions .field select{width:100%;max-width:none}.stability-actions button{flex:1}}

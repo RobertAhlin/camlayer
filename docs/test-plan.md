@@ -1,11 +1,11 @@
 # CamLayer Test Plan
 
-**Next target:** v0.2.8 frame-cadence verification and motion-quality regression tests.  
+**Next target:** v0.2.9 frame-cadence and 10-minute stability test.  
 **Purpose:** Verify the new mask detail modes against the v0.2.7 measurements, with emphasis on preserved fine detail and signed edge behavior.
 
 ## Test setup
 
-1. Check that Vercel published v0.2.8 from `main`, then hard-refresh the page.
+1. Check that Vercel published v0.2.9 from `main`, then hard-refresh the page.
 2. Close other camera-using applications if they interfere with access.
 3. Use the same physical webcam, camera angle, background, and lighting for every comparison.
 4. Select `1280 × 720` and confirm the actual output size shown.
@@ -56,6 +56,19 @@ Then compare `Full`, `Balanced`, and `Fast` with all other settings constant. Al
 - Any residual slowness is measured and documented before new visual features are added.
 
 **v0.2.7 showed 41.4 FPS with both filters off, 17.7 FPS with softness −0.07, and 24.0 FPS with cleanup 1.00 in screenshot tests. v0.2.8 is not yet validated in the browser.**
+
+## v0.2.9 cadence and stability test
+
+1. Verify the `v0.2.9` label and confirm the camera frame callback is active in the live performance panel.
+2. At 1280 × 720 and Balanced detail, compare Presented FPS, Processed FPS and processing milliseconds. A nominal 30 FPS webcam should not be reported as 50 unique captured frames.
+3. Run a 2-minute stability test while visible, confirm the elapsed time advances and a final summary appears.
+4. Run a 10-minute stability test with head movements, hands near the face and periods without movement.
+5. Record average processed FPS, average/worst processing time, skipped presented frames and gaps over 250 ms. Note any flicker, slowness or unexpected camera shutdown.
+6. Change browser tabs briefly in a separate test and verify the report flags the test as backgrounded.
+7. Stop the camera and check that the webcam indicator turns off and callbacks cease.
+8. If `requestVideoFrameCallback` is unavailable, validate fallback mode separately and do not treat its frame count as exact.
+
+A passing manual test requires the app to remain responsive, output alpha to remain valid, camera to stop cleanly, reported FPS to reflect distinct processed frames, and visible performance not to degrade unacceptably. **No v0.2.9 pass result has yet been recorded.**
 
 ## Verified live comparison (November 20, 2026)
 

@@ -1,13 +1,15 @@
 # Current Architecture
 
-**As implemented in v0.2.8.** This describes the working browser prototype, not a completed OBS plugin.
+**As implemented in v0.2.9.** This describes the working browser prototype, not a completed OBS plugin.
 
 ## Data flow
 
 ```text
 Camera (getUserMedia)
     |
-HTMLVideoElement
+HTMLVideoElement + requestVideoFrameCallback
+    |
+One processing pass per distinct presented frame
     |
 MediaPipe ImageSegmenter (VIDEO mode, CPU delegate)
     |
@@ -37,7 +39,9 @@ The app selects the second confidence mask for multi-channel models or the first
 ## Implementation files
 
 - `index.html`: application entry point and resource links.
-- `src/main.js`: UI, stored settings, webcam lifecycle, MediaPipe loading, composition, and per-stage timing.
+- `src/main.js`: UI, stored settings, webcam lifecycle, MediaPipe loading, composition, frame callback scheduling, and per-stage timing.
+- `src/frame-timing.mjs`: metadata-based presentation counting, rolling FPS, skipped-frame tracking and stability test statistics.
+- `tests/frame-timing.test.mjs`: automated diagnostics and timed-test behavior checks.
 - `src/mask-processor.mjs`: reusable CPU mask processor with separate work resolution, temporal smoothing, cleanup, morphology, and RGBA output.
 - `tests/mask-processor.test.mjs`: automated behavior tests for the processor.
 - `src/styles.css`: responsive application styling.
@@ -82,3 +86,13 @@ This change needs real-device validation. Other steps, including cleanup filteri
 ## OBS integration boundary
 
 The output is currently a browser canvas. A successful transparent preview in a browser **does not prove** OBS Browser Source can access the webcam and preserve alpha, nor that OBS and the app can open the same camera simultaneously. These must be independently tested before integration claims or architecture commitments.
+
+## Frame scheduling and stability testing
+
+In v0.2.9 a video-frame callback is registered on the camera's `HTMLVideoElement`. When the browser supplies a new presented frame, CamLayer checks the monotonically increasing `presentedFrames` counter and processes the image only once per new counter value.
+
+The callback is re-registered after processing. If processing takes too long, the next callback may report a gap in `presentedFrames`, which is recorded as skipped presented frames. This is a browser-compositor metric, not a measurement of camera sensor frames dropped before presentation.
+
+A limited fallback checks `getVideoPlaybackQuality().totalVideoFrames` where available, otherwise uses a throttled animation frame loop. The final fallback is inherently approximate and is labeled as such.
+
+The rolling three-second Presented FPS and Processed FPS counters are independent of the smoothed inference/mask/canvas processing timings. A 2/5/10 minute test accumulates average and peak processing duration, skipped presented frames, and callback gaps over the full run. No media frames are retained by the test. Results remain local to the open tab and are qualified if the page is hidden.

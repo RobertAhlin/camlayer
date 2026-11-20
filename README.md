@@ -7,8 +7,8 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 **Visual quality reference:** Microsoft Teams. Comparable quality remains a target to evaluate, not a verified claim.
 
 **Live demo:** https://camlayer.vercel.app/  
-**Current code version:** v0.2.8  
-**Development status:** Working browser prototype. Live v0.2.7 measurements identified mask postprocessing as the main performance bottleneck. v0.2.8 adds selectable mask-processing detail levels and buffer reuse; real-browser screenshots now confirm a large reduction in mask processing time, with the effect on moving fine details still to be evaluated.
+**Current code version:** v0.2.9  
+**Development status:** Working browser prototype. v0.2.8 real-camera tests showed substantial mask-processing gains. v0.2.9 adds distinct-frame scheduling and a timed stability test; live verification is pending.
 
 ## Current capabilities
 
@@ -74,10 +74,12 @@ camlayer/
 ├── .gitignore
 ├── src/
 │   ├── main.js
+│   ├── frame-timing.mjs
 │   ├── mask-processor.mjs
 │   └── styles.css
 ├── tests/
-│   └── mask-processor.test.mjs
+│   ├── mask-processor.test.mjs
+│   └── frame-timing.test.mjs
 └── docs/
     ├── development-status.md
     ├── architecture.md
@@ -85,6 +87,41 @@ camlayer/
 ```
 
 Current processing and UI logic are in `src/main.js`. Further modularization is a future improvement, not a prerequisite for testing.
+
+## v0.2.9: one processing pass per presented video frame
+
+CamLayer now uses `HTMLVideoElement.requestVideoFrameCallback()` when available. The browser calls the processing loop when a new video frame is submitted to the compositor. Unlike `requestAnimationFrame` combined with `video.currentTime`, this avoids unnecessary reprocessing of the same presented frame.
+
+Live diagnostics now distinguish:
+
+- **Presented FPS:** Frame presentation rate observed using video-frame metadata. This is not a measurement of the camera sensor's physical frame rate.
+- **Processed FPS:** Unique presented frames CamLayer actually processed. Normally this cannot exceed Presented FPS, except for minor short-window measurement differences.
+- **Skipped presented frames:** Gaps in `presentedFrames` metadata between callbacks. These gaps indicate frames presented but not individually processed; they do not measure camera hardware drops.
+
+Older browsers fall back to `requestAnimationFrame` and, where available, the video playback frame counter. If the counter is unavailable, the fallback is explicitly labeled as **estimated**; one-to-one processing cannot be guaranteed.
+
+### Timed stability test
+
+After starting the camera, use **Start test** to collect a **2, 5 or 10 minute** test session. The results show:
+
+- Elapsed time, average processed FPS and mean/worst processing time.
+- Frames presented but not individually processed.
+- Long gaps between processed frames (more than 250 ms).
+- Whether the tab was hidden during the test, which may invalidate the comparison.
+
+The test runs in the open browser tab. It is not a background job or an automatic long-term monitor. Keep the tab visible and the computer awake. No camera video or recordings are saved or sent to a server.
+
+**Important:** Correct frame scheduling can lower the displayed processing FPS compared with v0.2.8 because duplicate work no longer inflates that number. That is a measurement correction, not necessarily a performance regression.
+
+### Quick test
+
+1. Open the latest deployment and confirm `v0.2.9`.
+2. Select a webcam, `1280 × 720`, and **Balanced** mask detail.
+3. Start the camera. On a nominal 30 FPS camera, Presented FPS should approach the frame rate delivered to the compositor; Processed FPS should not exceed that for sustained intervals.
+4. Start a **2 minute** test, then try **10 minutes** with normal head/hand movement and the tab visible.
+5. Compare the test summary, missed frame count, processing time, and visual stability.
+
+Automated logic tests are provided in `tests/frame-timing.test.mjs` and can be run locally with `node --test tests/frame-timing.test.mjs`. No production build step is required.
 
 ## v0.2.8 live measurements (November 20, 2026)
 
@@ -162,4 +199,4 @@ All source code, code comments, user-facing app strings, documentation, commit m
 
 **Project started:** November 4, 2026  
 **Last documented status:** November 20, 2026  
-**Next milestone:** Measure unique captured frames separately from processing throughput, then test moving fine details across Fast, Balanced and Full.
+**Next milestone:** Verify v0.2.9 frame timing and run a 10-minute stability test, then test OBS integration feasibility.
