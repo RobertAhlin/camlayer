@@ -2,20 +2,20 @@
 
 **AI Background Removal for OBS Studio**
 
-CamLayer is an experimental, browser-based real-time webcam background removal application. It uses on-device person segmentation to create a video canvas with a transparent background, with eventual integration into OBS Studio as the long-term goal.
+CamLayer is an open-source AI background-removal project for OBS Studio. The browser demonstration validates person segmentation; the native OBS plugin is the primary product. The native plugin has verified model loading on a real Windows OBS 33.0.1 installation and now contains an opt-in experimental live mask pipeline awaiting on-device visual testing.
 
 **Visual quality reference:** Microsoft Teams. Comparable quality remains a target to evaluate, not a verified claim.
 
 **Live demo:** https://camlayer.vercel.app/  
 **Browser demo version:** v0.4.2  
-**Native OBS plugin:** bootstrap source code added; build and model integration pending  
-**Development status:** Browser-based segmentation and the temporary OBS Chroma Output have been tested. The long-term product target is now a native OBS video filter. Its first pass-through scaffold is committed but has not yet been compiled or installed.
+**Native OBS plugin:** built on Windows and loaded in OBS 33.0.1; experimental live MediaPipe GPU mask code added (on-device visual test pending)  
+**Development status:** Browser segmentation and GPU transparency have been tested. Native model loading has been verified in OBS, with a bounded background worker validated in Windows CI. The first experimental MediaPipe camera-to-mask-to-GPU path is now in the plugin; real-camera mask output and performance still need verification.
 
 ## License and open-source strategy
 
 **CamLayer is open source under [GNU GPL-3.0-only](LICENSE).** All new CamLayer-authored source code is developed openly, including the browser proof of concept, the native OBS plugin, and future AI-engine adapters.
 
-We are building **two selectable AI backends** in the native OBS plugin. A first OBS dropdown now stores the selected engine, but **does not yet run live model inference**:
+We are building **two selectable AI backends** in the native OBS plugin. The OBS dropdown now stores the selected engine. **MediaPipe has an experimental opt-in live inference path; RVM live inference is not yet implemented:**
 
 - **MediaPipe:** a lighter and faster segmenter, already verified in the browser and in a standalone native ONNX test.
 - **Robust Video Matting (RVM):** a temporal video matting engine planned for improved moving-edge quality; this has **not** yet been implemented or benchmarked in CamLayer.
@@ -28,13 +28,13 @@ Commercial distribution of GPL software is permitted, provided the applicable li
 
 ## Native AI engine validation (in progress)
 
-The native OBS GPU alpha diagnostic was verified in a real OBS test. The standalone native ONNX inference test also passed. A **new optional ONNX Runtime loader is now compiled as part of the OBS plugin**, using a reusable C/C++ image-to-mask bridge. Its new Windows build and on-device model loading are still awaiting verification. Live camera background removal is not connected yet.
+The native OBS GPU alpha diagnostic was verified in a real OBS test. The standalone native ONNX inference test also passed. A **new optional ONNX Runtime loader is now compiled as part of the OBS plugin**, using a reusable C/C++ image-to-mask bridge. Its Windows build and on-device model loading have been verified. An experimental live camera mask path is implemented but still needs visual testing in OBS.
 
 - Added a standalone C++ ONNX Runtime probe at [native/ai-probe](native/ai-probe/README.md).
 - Added [Verify CamLayer Native AI Model (Windows)](.github/workflows/verify-native-ai.yml) to build and run it automatically on GitHub-hosted Windows machines.
 - Chosen a pinned ONNX MediaPipe Selfie Segmentation candidate (Apache-2.0 model listing) and official ONNX Runtime CPU package.
 - The initial test uses a synthetic image, verifies tensor dimensions and checks that the output contains only finite values.
-- **This is not yet live camera inference or a working native AI OBS filter.** The existing filter still uses a diagnostic ellipse; integration follows only after the inference probe passes.
+- **The standalone probe is distinct from the plugin.** A first experimental live pipeline is now in the plugin, but visual quality, orientation, stability and actual person cutout have not yet been validated on a real camera.
 
 The end-user computer remains free from Node.js, Python, CMake and model development dependencies. A later deployable OBS plugin will still require IT-permitted installation.
 
@@ -42,9 +42,9 @@ The end-user computer remains free from Node.js, Python, CMake and model develop
 
 The plugin build now includes `native/obs-plugin/src/ai-engine.cpp` and packages both `onnxruntime.dll` and the pinned ONNX model. The native engine implements BGRA preprocessing and 256x256 alpha-mask inference behind a reusable C interface.
 
-There is a new, opt-in `Load native MediaPipe AI runtime` setting that attempts to initialize the model inside OBS. **It does not yet apply a model-derived mask to the live camera**. The existing ellipse is the safety fallback and the RVM selection is not yet functional.
+There is a new, opt-in `Load native MediaPipe AI runtime` setting that attempts to initialize the model inside OBS. A separate **Enable live MediaPipe background removal (experimental)** option now captures reduced OBS camera frames, runs ONNX inference on a worker, and attempts to apply the returned mask in the GPU shader. Its rendering still requires on-device validation. The existing ellipse is the safety fallback; the RVM selection is not yet functional.
 
-The GitHub Windows build includes an independent smoke test for the plugin's own native engine. A green CI result is required before an installation test; a successfully loaded session in the OBS logs will then verify the next integration step. The future frame capture and asynchronous worker remain separate tasks.
+The GitHub Windows build includes an independent smoke test for the plugin's own native engine. A green CI result is required before an installation test; a successfully loaded session in the OBS logs will then verify the next integration step. The capture and asynchronous worker are now integrated behind an opt-in control; resolving on-device rendering and performance issues is the next task.
 
 ## Native OBS plugin roadmap (primary product direction)
 
