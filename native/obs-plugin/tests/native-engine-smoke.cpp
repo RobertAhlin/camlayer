@@ -1,6 +1,9 @@
 // Standalone smoke test of the very same native engine linked into OBS.
 // A constant BGRA frame is not a visual-quality test.
 #include "../src/ai-engine.h"
+#include "../src/ai-worker.h"
+#include <chrono>
+#include <thread>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -36,6 +39,48 @@ int main(int argc, char **argv)
             std::cerr << "Invalid alpha value\n";
             return 1;
         }
+    }
+    // Confirm the same model can run outside the caller's thread.
+    camlayer_worker *worker = camlayer_worker_create(CAMLAYER_BACKEND_MEDIAPIPE, argv[1]);
+    if (!worker) return 1;
+    int state = CAMLAYER_WORKER_STARTING;
+    for (int i = 0; i < 200 && state == CAMLAYER_WORKER_STARTING; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        state = camlayer_worker_get_status(worker);
+    }
+    if (state != CAMLAYER_WORKER_READY ||
+        !camlayer_worker_submit(worker, bgra.data(), width, height, width * 4, 12345)) {
+        std::cerr << "Worker initialization or frame submission failed\n";
+        camlayer_worker_destroy(worker);
+        return 1;
+    }
+    uint64_t timestamp = 0;
+    bool received = false;
+    for (int i = 0; i < 200; ++i) {
+        if (camlayer_worker_take_mask(worker, alpha.data(), alpha.size(), &timestamp)) {
+            received = true;
+            break;
+        }
+        if (camlayer_worker_get_status(worker) != CAMLAYER_WORKER_READY) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    camlayer_worker_destroy(worker);
+    if (!received || timestamp != 12345) {
+        std::cerr << "Async worker did not publish a valid timestamped mask\n";
+        return 1;
+    }
+    // RVM is represented honestly as unavailable until the backend exists.
+    worker = camlayer_worker_create(CAMLAYER_BACKEND_RVM, nullptr);
+    if (!worker) return 1;
+    for (int i = 0; i < 50 &&
+         camlayer_worker_get_status(worker) == CAMLAYER_WORKER_STARTING; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    const bool rvm_unavailable =
+        camlayer_worker_get_status(worker) == CAMLAYER_WORKER_UNAVAILABLE;
+    camlayer_worker_destroy(worker);
+    if (!rvm_unavailable) {
+        std::cerr << "RVM placeholder must not report ready\n";
+        return 1;
     }
     std::cout << "CamLayer OBS native engine API smoke test: PASS\n";
     return 0;
