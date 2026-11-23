@@ -28,7 +28,7 @@ Commercial distribution of GPL software is permitted, provided the applicable li
 
 ## Native AI engine validation (in progress)
 
-The native OBS GPU alpha diagnostic has already been verified by a real OBS test. The next implementation milestone is loading and running a person segmentation model in native Windows code.
+The native OBS GPU alpha diagnostic was verified in a real OBS test. The standalone native ONNX inference test also passed. A **new optional ONNX Runtime loader is now compiled as part of the OBS plugin**, using a reusable C/C++ image-to-mask bridge. Its new Windows build and on-device model loading are still awaiting verification. Live camera background removal is not connected yet.
 
 - Added a standalone C++ ONNX Runtime probe at [native/ai-probe](native/ai-probe/README.md).
 - Added [Verify CamLayer Native AI Model (Windows)](.github/workflows/verify-native-ai.yml) to build and run it automatically on GitHub-hosted Windows machines.
@@ -37,6 +37,14 @@ The native OBS GPU alpha diagnostic has already been verified by a real OBS test
 - **This is not yet live camera inference or a working native AI OBS filter.** The existing filter still uses a diagnostic ellipse; integration follows only after the inference probe passes.
 
 The end-user computer remains free from Node.js, Python, CMake and model development dependencies. A later deployable OBS plugin will still require IT-permitted installation.
+
+## Native OBS AI integration milestone (experimental)
+
+The plugin build now includes `native/obs-plugin/src/ai-engine.cpp` and packages both `onnxruntime.dll` and the pinned ONNX model. The native engine implements BGRA preprocessing and 256x256 alpha-mask inference behind a reusable C interface.
+
+There is a new, opt-in `Load native MediaPipe AI runtime` setting that attempts to initialize the model inside OBS. **It does not yet apply a model-derived mask to the live camera**. The existing ellipse is the safety fallback and the RVM selection is not yet functional.
+
+The GitHub Windows build includes an independent smoke test for the plugin's own native engine. A green CI result is required before an installation test; a successfully loaded session in the OBS logs will then verify the next integration step. The future frame capture and asynchronous worker remain separate tasks.
 
 ## Native OBS plugin roadmap (primary product direction)
 
@@ -333,4 +341,4 @@ All source code, code comments, user-facing app strings, documentation, commit m
 
 **Project started:** November 4, 2026  
 **Last documented status:** November 20, 2026  
-**Next milestone:** Confirm the Windows ONNX inference probe succeeds, then integrate the model's mask output into the verified native OBS GPU transparency pipeline.
+**Next milestone:** Verify that the OBS-linked native ONNX engine builds and loads with its packaged runtime/model; then implement real-time camera-frame inference and GPU alpha mask compositing.
