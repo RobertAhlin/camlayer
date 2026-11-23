@@ -11,6 +11,7 @@
 #include "ai-worker.h"
 #include <util/platform.h>
 #include <graphics/graphics.h>
+#include <graphics/vec4.h>
 #include <math.h>
 #include <string.h>
 
@@ -246,13 +247,18 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
 {
     obs_source_t *target = obs_filter_get_target(filter->source);
     if (!target || !filter->worker ||
-        camlayer_worker_get_status(filter->worker) != CAMLAYER_WORKER_READY)
+        camlayer_worker_get_status(filter->worker) != CAMLAYER_WORKER_READY) {
+        filter->mask_ready = false;
         return;
+    }
 
     const uint32_t width = obs_source_get_width(target);
     const uint32_t height = obs_source_get_height(target);
-    if (!width || !height)
+    if (!width || !height) {
+        filter->mask_ready = false;
+        filter->staging_ready = false;
         return;
+    }
     if (width != filter->captured_width || height != filter->captured_height) {
         filter->captured_width = width;
         filter->captured_height = height;
@@ -348,9 +354,8 @@ static void camlayer_render(void *data, gs_effect_t *unused)
                                           OBS_NO_DIRECT_RENDERING))
         return;
 
-    /* Both selections intentionally use the same safe pass-through/ellipse
-     * renderer until capture, ONNX inference, and mask upload are implemented.
-     * Never claim that switching the selector activates either model.
+    /* The diagnostic ellipse always overrides the experimental live mask.
+     * RVM remains unavailable until recurrent inference is implemented.
      */
     gs_effect_set_bool(filter->ellipse_parameter, filter->diagnostic);
     const bool apply_mask = filter->live_ai && !filter->diagnostic &&
