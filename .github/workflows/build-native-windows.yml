@@ -61,6 +61,8 @@ jobs:
           Copy-Item 'camlayer/native/obs-plugin/src/plugin-main.c' 'obs-template/src/plugin-main.c' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-engine.cpp' 'obs-template/src/ai-engine.cpp' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-engine.h' 'obs-template/src/ai-engine.h' -Force
+          Copy-Item 'camlayer/native/obs-plugin/src/ai-worker.cpp' 'obs-template/src/ai-worker.cpp' -Force
+          Copy-Item 'camlayer/native/obs-plugin/src/ai-worker.h' 'obs-template/src/ai-worker.h' -Force
           New-Item -ItemType Directory -Force -Path 'obs-template/data/models' | Out-Null
           Copy-Item 'deps/selfie_segmentation.onnx' 'obs-template/data/models/selfie_segmentation.onnx' -Force
           New-Item -ItemType Directory -Force -Path 'obs-template/dependencies/onnxruntime/include' | Out-Null
@@ -68,8 +70,11 @@ jobs:
           Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.lib' 'obs-template/dependencies/onnxruntime/onnxruntime.lib' -Force
           $cmake = 'obs-template/CMakeLists.txt'
           Add-Content $cmake @'
-          target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ai-engine.cpp)
+          target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ai-engine.cpp src/ai-worker.cpp)
           target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
+          if(MSVC)
+            target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/EHsc>)
+          endif()
           target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/onnxruntime/include")
           target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/onnxruntime/onnxruntime.lib")
           '@
@@ -115,7 +120,7 @@ jobs:
           $vsPath = & $vswhere -latest -products '*' -property installationPath
           if (-not $vsPath) { throw 'Visual Studio build tools unavailable.' }
           $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
-          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /I`"deps/ort/build/native/include`" camlayer/native/obs-plugin/src/ai-engine.cpp camlayer/native/obs-plugin/tests/native-engine-smoke.cpp /link /LIBPATH:`"deps/ort/runtimes/win-x64/native`" onnxruntime.lib /OUT:camlayer-native-smoke.exe"
+          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /I`"deps/ort/build/native/include`" camlayer/native/obs-plugin/src/ai-engine.cpp camlayer/native/obs-plugin/src/ai-worker.cpp camlayer/native/obs-plugin/tests/native-engine-smoke.cpp /link /LIBPATH:`"deps/ort/runtimes/win-x64/native`" onnxruntime.lib /OUT:camlayer-native-smoke.exe"
           cmd /c $cmd
           if ($LASTEXITCODE -ne 0) { throw "Smoke test compilation failed: $LASTEXITCODE" }
           Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.dll' './onnxruntime.dll' -Force
