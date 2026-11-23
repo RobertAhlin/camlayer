@@ -61,6 +61,23 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## Native ONNX runtime integration (experimental)
+
+The plugin now has a C ABI bridge in `src/ai-engine.h` and a C++ implementation in `src/ai-engine.cpp`. The bridge can:
+
+- Load the pinned MediaPipe Selfie Segmentation ONNX file through ONNX Runtime.
+- Convert a 640x360, 1280x720 or other BGRA image to NCHW RGB 256x256.
+- Run inference and return a 256x256 floating-point alpha mask with values in [0,1].
+- Release model resources explicitly.
+
+The **Load native MediaPipe AI runtime** checkbox opt-in initializes the model from the plugin's bundled `data/models/` directory and logs success or a detailed failure in OBS's log file. The model is not yet fed live OBS frames. RVM has only a selection placeholder.
+
+The Windows GitHub Actions build now downloads the same pinned model and ONNX Runtime binaries previously verified by the standalone native AI workflow, compiles the C++ implementation into `camlayer-obs.dll`, and places the `onnxruntime.dll` beside the OBS plugin. It includes a separate smoke-test executable exercising the same engine API with a synthetic BGRA frame, to catch integration regressions.
+
+**This is experimental infrastructure, not live AI background removal yet.** Preserve the ellipse test as the only verified alpha-rendering path until the camera-to-model-to-GPU pipeline has been tested. Enabling the loader during OBS use may cause a brief initialization pause, and must be done only in an authorized test environment.
+
+Next implementation: safely sample the actual OBS camera image, send one bounded frame at a time to a background inference worker (not the OBS graphics render thread), upload the resulting alpha mask to a GPU texture, and replace the ellipse only after successful end-to-end tests. Handle model lifecycle, camera size changes, backend switching and concurrent frames carefully.
+
 ## Dual AI-engine selection scaffold
 
 The native OBS filter now exposes an **AI engine (planned)** dropdown with:
