@@ -29,11 +29,51 @@ jobs:
           path: obs-template
           submodules: recursive
 
+      - name: Acquire pinned native AI dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '1.24.2'
+          $package = "microsoft.ml.onnxruntime.$version.nupkg"
+          $url = "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/$version/$package"
+          New-Item -ItemType Directory -Force -Path 'deps' | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "deps/$package"
+          Copy-Item "deps/$package" 'deps/ort.zip'
+          Expand-Archive 'deps/ort.zip' 'deps/ort' -Force
+          $ortHeader = 'deps/ort/build/native/include/onnxruntime_cxx_api.h'
+          $ortLib = 'deps/ort/runtimes/win-x64/native/onnxruntime.lib'
+          $ortDll = 'deps/ort/runtimes/win-x64/native/onnxruntime.dll'
+          foreach ($file in @($ortHeader, $ortLib, $ortDll)) {
+            if (-not (Test-Path $file -PathType Leaf)) { throw "Missing native dependency: $file" }
+          }
+
+          $modelUrl = 'https://huggingface.co/onnx-community/mediapipe_selfie_segmentation/resolve/d1eb4b9905988be58be2f6a3782e606ac9a3ca2f/onnx/model.onnx'
+          Invoke-WebRequest -Uri $modelUrl -OutFile 'deps/selfie_segmentation.onnx'
+          $actual = (Get-FileHash -Algorithm SHA256 'deps/selfie_segmentation.onnx').Hash.ToLowerInvariant()
+          $expected = '3241ac4ad8aa35bdaf33946776db29f7c283a413aa0b0dacb9483594b4531aad'
+          if ($actual -ne $expected) { throw "Model SHA256 mismatch: $actual" }
+          Write-Host "Pinned native AI dependencies verified (model $actual)."
+
       - name: Adapt official template for CamLayer
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           Copy-Item 'camlayer/native/obs-plugin/src/plugin-main.c' 'obs-template/src/plugin-main.c' -Force
+          Copy-Item 'camlayer/native/obs-plugin/src/ai-engine.cpp' 'obs-template/src/ai-engine.cpp' -Force
+          Copy-Item 'camlayer/native/obs-plugin/src/ai-engine.h' 'obs-template/src/ai-engine.h' -Force
+          New-Item -ItemType Directory -Force -Path 'obs-template/data/models' | Out-Null
+          Copy-Item 'deps/selfie_segmentation.onnx' 'obs-template/data/models/selfie_segmentation.onnx' -Force
+          New-Item -ItemType Directory -Force -Path 'obs-template/dependencies/onnxruntime/include' | Out-Null
+          Copy-Item 'deps/ort/build/native/include/*.h' 'obs-template/dependencies/onnxruntime/include/' -Force
+          Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.lib' 'obs-template/dependencies/onnxruntime/onnxruntime.lib' -Force
+          $cmake = 'obs-template/CMakeLists.txt'
+          Add-Content $cmake @'
+
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ai-engine.cpp)
+target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/onnxruntime/include")
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/onnxruntime/onnxruntime.lib")
+'@
           New-Item -ItemType Directory -Force -Path 'obs-template/data/locale' | Out-Null
           Copy-Item 'camlayer/native/obs-plugin/data/locale/en-US.ini' 'obs-template/data/locale/en-US.ini' -Force
           Copy-Item 'camlayer/native/obs-plugin/data/ellipse_alpha.effect' 'obs-template/data/ellipse_alpha.effect' -Force
@@ -42,13 +82,13 @@ jobs:
           $spec = Get-Content $specFile -Raw | ConvertFrom-Json
           $spec.name = 'camlayer-obs'
           $spec.displayName = 'CamLayer OBS Plugin'
-          $spec.version = '0.1.0'
+          $spec.version = '0.2.0'
           $spec.author = 'CamLayer contributors'
           $spec.website = 'https://github.com/RobertAhlin/camlayer'
           $spec.email = ''
           $spec | ConvertTo-Json -Depth 20 | Set-Content -Path $specFile -Encoding utf8
 
-          Write-Host 'OBS plugin template prepared for CamLayer (pass-through only).'
+          Write-Host 'OBS plugin template prepared with native ONNX Runtime (experimental loader only).'
 
       - name: Configure, build and install using OBS template
         working-directory: obs-template
@@ -56,6 +96,17 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           ./.github/scripts/Build-Windows.ps1 -Target x64 -Configuration RelWithDebInfo
+
+      - name: Package native ONNX Runtime next to CamLayer DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dest = 'obs-template/release/RelWithDebInfo/camlayer-obs/bin/64bit'
+          if (-not (Test-Path "$dest/camlayer-obs.dll")) { throw 'OBS DLL missing.' }
+          Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.dll' "$dest/onnxruntime.dll" -Force
+          $model = 'obs-template/release/RelWithDebInfo/camlayer-obs/data/models/selfie_segmentation.onnx'
+          if (-not (Test-Path $model)) { throw 'Model is missing from artifact.' }
+          Write-Host 'Bundled ONNX Runtime DLL and pinned MediaPipe model.'
 
       - name: Show built files
         if: success()
@@ -72,7 +123,9 @@ jobs:
           $required = @(
             "$root/bin/64bit/camlayer-obs.dll",
             "$root/data/ellipse_alpha.effect",
-            "$root/data/locale/en-US.ini"
+            "$root/data/locale/en-US.ini",
+            "$root/bin/64bit/onnxruntime.dll",
+            "$root/data/models/selfie_segmentation.onnx"
           )
           foreach ($path in $required) {
             if (-not (Test-Path $path -PathType Leaf)) {
