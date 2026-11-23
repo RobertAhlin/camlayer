@@ -3,6 +3,7 @@
 #include "../src/ai-engine.h"
 #include "../src/ai-worker.h"
 #include "../src/ai-mask-refine.h"
+#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <cmath>
