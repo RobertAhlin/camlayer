@@ -7,6 +7,7 @@
  */
 #include <obs-module.h>
 #include <util/bmem.h>
+#include "ai-engine.h"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
@@ -18,6 +19,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_STABILITY "edge_stability"
 #define SETTING_DIAGNOSTIC "diagnostic_alpha"
 #define SETTING_AI_ENGINE "ai_engine"
+#define SETTING_RUNTIME_TEST "enable_runtime_test"
 
 /* Engine selection is persisted now. Live inference will follow in a later build. */
 enum camlayer_ai_engine {
@@ -40,6 +42,8 @@ struct camlayer_filter {
     double stability;
     bool diagnostic;
     enum camlayer_ai_engine engine;
+    camlayer_ai_session *ai;
+    bool runtime_test;
 };
 
 static const char *camlayer_get_name(void *unused)
@@ -68,6 +72,23 @@ static void camlayer_update(void *data, obs_data_t *settings)
              camlayer_engine_name(next_engine));
     }
     filter->engine = next_engine;
+    const bool wanted_test = obs_data_get_bool(settings, SETTING_RUNTIME_TEST);
+    if (filter->ai && (!wanted_test || next_engine != CAMLAYER_AI_MEDIAPIPE)) {
+        camlayer_ai_close(filter->ai);
+        filter->ai = NULL;
+    }
+    filter->runtime_test = wanted_test;
+    if (wanted_test && next_engine == CAMLAYER_AI_MEDIAPIPE && !filter->ai) {
+        char *path = obs_module_file("models/selfie_segmentation.onnx");
+        char error[512] = {0};
+        filter->ai = camlayer_ai_open(path, error, sizeof(error));
+        if (filter->ai) {
+            blog(LOG_INFO, "[CamLayer] Native MediaPipe ONNX session loaded; live video integration pending");
+        } else {
+            blog(LOG_WARNING, "[CamLayer] Native MediaPipe ONNX model not available: %s", error);
+        }
+        bfree(path);
+    }
 }
 
 static void camlayer_destroy(void *data)
@@ -76,6 +97,7 @@ static void camlayer_destroy(void *data)
     if (!filter)
         return;
 
+    camlayer_ai_close(filter->ai);
     obs_enter_graphics();
     gs_effect_destroy(filter->alpha_effect);
     obs_leave_graphics();
@@ -122,6 +144,7 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_double(settings, SETTING_STABILITY, 1.0);
     obs_data_set_default_bool(settings, SETTING_DIAGNOSTIC, false);
     obs_data_set_default_int(settings, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
+    obs_data_set_default_bool(settings, SETTING_RUNTIME_TEST, false);
 }
 
 static obs_properties_t *camlayer_properties(void *unused)
@@ -136,6 +159,8 @@ static obs_properties_t *camlayer_properties(void *unused)
                               CAMLAYER_AI_MEDIAPIPE);
     obs_property_list_add_int(engine, obs_module_text("CamLayer.EngineRVM"),
                               CAMLAYER_AI_RVM);
+    obs_properties_add_bool(props, SETTING_RUNTIME_TEST,
+                            obs_module_text("CamLayer.RuntimeTest"));
     obs_properties_add_text(props, "engine_info",
                             obs_module_text("CamLayer.EngineNotice"), OBS_TEXT_INFO);
 
