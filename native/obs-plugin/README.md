@@ -61,6 +61,19 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## Shared asynchronous inference worker (development milestone)
+
+`src/ai-worker.h` and `src/ai-worker.cpp` provide a bounded, latest-frame-only background worker that can serve different AI backends. A distinct worker instance belongs to each camera/filter instance in the final integration.
+
+- **MediaPipe:** a background thread initializes the ONNX session, consumes copied 256x256 BGRA frames, and produces a timestamped 256x256 float alpha mask
+- **RVM:** the same public interface identifies the engine, but reports `UNAVAILABLE` until recurrent-state inference is implemented; no false ready status
+- Caller-side submit only copies/downsamples pixels; model inference is never performed on the caller's thread
+- New pending frames overwrite old pending frames. An obsolete inference result is discarded when a newer frame is already queued
+- A worker is shut down and joined before deletion. Camera disconnection, engine switching and model shutdown must use this lifecycle
+- The Windows smoke test exercises model initialization, frame submission, result retrieval, timestamp integrity and the unavailable RVM placeholder
+
+**Not yet connected to live OBS camera frames.** The filter still uses its existing optional model loader and verified GPU ellipse. The worker is compiled into the Windows plugin artifact and validated by a separate smoke test. Live camera capture, worker lifecycle integration in the OBS filter, safe mask texture upload and alpha rendering remain next steps. This staged approach avoids replacing the currently working on-device path before it is end-to-end validated.
+
 ## Native ONNX runtime integration (experimental)
 
 The plugin now has a C ABI bridge in `src/ai-engine.h` and a C++ implementation in `src/ai-engine.cpp`. The bridge can:
