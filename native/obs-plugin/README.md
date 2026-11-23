@@ -61,6 +61,23 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## Dual AI-engine selection scaffold
+
+The native OBS filter now exposes an **AI engine (planned)** dropdown with:
+
+- **MediaPipe (Fast, integration pending)**
+- **Robust Video Matting (Quality, integration pending)**
+
+OBS saves the selected engine with the filter settings. Switching the option currently does **not** run either model; in both cases the last verified GPU pass-through/diagnostic ellipse remains intact. This deliberate staging lets us test the dropdown without accidentally claiming working background removal.
+
+### Planned backend interface
+
+Each implementation should provide initialization, model shutdown, per-frame inference, status reporting, and a shared grayscale alpha mask. MediaPipe will process independent frames, while RVM will maintain recurrent per-stream state and reset it when the input changes, video seeks, or a new engine is selected.
+
+The GPU renderer and mask-refinement controls can then consume whichever alpha mask is active. Avoid running neural inference synchronously inside OBS's graphics rendering callback; use a bounded frame queue and well-defined frame ownership.
+
+Before shipping either backend, verify the separate model-weight redistribution conditions in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md), test CPU and GPU performance, and include all native runtime dependencies in the artifact.
+
 ## First alpha diagnostic test
 
 Once the updated artifact builds successfully, and only where installing a custom OBS plugin is authorized:
