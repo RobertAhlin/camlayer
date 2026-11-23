@@ -61,13 +61,24 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## Working cleanup and stability controls (first refinement pass)
+
+The native pipeline now implements **Edge Cleanup** and **Edge Stability** in the inference worker rather than leaving them as placeholder sliders. These controls operate on each filter instance's own mask state.
+
+- **Edge Cleanup, 0–1:** Reduces isolated, locally inconsistent foreground alpha at 256x256 resolution. Zero leaves the mask unchanged. This may remove small speckles and reduce some rough edges but cannot reliably separate a chair physically joined to the person's silhouette.
+- **Edge Stability, 0–2:** Uses motion-adaptive temporal smoothing. Zero has no smoothing, and higher settings blend more of the preceding mask when pixels change a little. Large changes favor the new frame to reduce trailing silhouettes.
+- The worker resets temporal state on camera loss or resolution change, and when its backend is restarted. Mask history is not shared between cameras.
+- The build includes regression tests for zero-effect controls, isolated pixel cleanup, smooth low-motion changes, and fast motion recovery.
+
+**Visual behavior is not yet validated in OBS.** Test first under the challenging low-light train conditions and compare with both sliders at zero. Overaggressive cleanup can remove hair detail; high stability can still produce ghosting. The refinement code is built as shared backend infrastructure so the future RVM implementation can use the same controls, though RVM has not been integrated.
+
 ## Experimental OBS live-mask path (first integration build)
 
 The native filter now exposes **Enable live MediaPipe background removal (experimental)**, disabled by default. When enabled and the MediaPipe backend is selected, the filter creates a source-local inference worker, captures a downscaled 256x256 BGRA view of its actual OBS filter target on the graphics thread, stages pixels for CPU inference, and uploads successful 256x256 alpha masks back to a GPU texture. The shader multiplies the source alpha by a mask whose cutoff and softness use the corresponding filter sliders.
 
 The initial readback is deliberately throttled to approximately 10 captures per second, while rendering remains controlled by OBS. The downscaled GPU staging buffer is mapped after a later capture interval to avoid immediately reading the same image just written. This is a **first functional prototype**, not a quality/performance validated implementation: GPU readback, image orientation, edge alignment, frame latency and camera changes require on-device tests. The mask is displayed only after the first successful inference. Before that, output remains unmasked. The original ellipse test remains available and overrides the live mask when enabled.
 
-MediaPipe is the only implemented live backend. RVM remains selectable but unavailable, with a shared worker interface ready for a separate recurrent-model implementation. The edge cleanup and edge stability sliders are still placeholders. Changing camera or resolution resets the visible mask to avoid using old masks with mismatched dimensions. Because model loading, CPU inference, GPU staging and source rendering can fail independently, test with a noncritical OBS scene, leave live mode disabled if problems occur, and use the OBS log entry `[CamLayer] First live MediaPipe alpha mask uploaded to GPU` to establish that a real model result reached the shader.
+MediaPipe is the only implemented live backend. RVM remains selectable but unavailable, with a shared worker interface ready for a separate recurrent-model implementation. The edge cleanup and edge stability sliders now have an initial CPU refinement implementation; visual validation is pending. Changing camera or resolution resets the visible mask to avoid using old masks with mismatched dimensions. Because model loading, CPU inference, GPU staging and source rendering can fail independently, test with a noncritical OBS scene, leave live mode disabled if problems occur, and use the OBS log entry `[CamLayer] First live MediaPipe alpha mask uploaded to GPU` to establish that a real model result reached the shader.
 
 ## Shared asynchronous inference worker (development milestone)
 
