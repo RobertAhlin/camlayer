@@ -108,6 +108,21 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
           if (-not (Test-Path $model)) { throw 'Model is missing from artifact.' }
           Write-Host 'Bundled ONNX Runtime DLL and pinned MediaPipe model.'
 
+      - name: Smoke-test OBS-linked ONNX engine with synthetic BGRA frame
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsPath = & $vswhere -latest -products '*' -property installationPath
+          if (-not $vsPath) { throw 'Visual Studio build tools unavailable.' }
+          $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /I`"deps/ort/build/native/include`" camlayer/native/obs-plugin/src/ai-engine.cpp camlayer/native/obs-plugin/tests/native-engine-smoke.cpp /link /LIBPATH:`"deps/ort/runtimes/win-x64/native`" onnxruntime.lib /OUT:camlayer-native-smoke.exe"
+          cmd /c $cmd
+          if ($LASTEXITCODE -ne 0) { throw "Smoke test compilation failed: $LASTEXITCODE" }
+          Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.dll' './onnxruntime.dll' -Force
+          & ./camlayer-native-smoke.exe 'deps/selfie_segmentation.onnx'
+          if ($LASTEXITCODE -ne 0) { throw "ONNX engine smoke test failed: $LASTEXITCODE" }
+
       - name: Show built files
         if: success()
         shell: pwsh
