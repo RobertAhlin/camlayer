@@ -241,3 +241,11 @@ GitHub Actions run #8 confirmed that ONNX Runtime 1.24.2 executed the ONNX model
 New probe code now accepts a P6 RGB portrait (256x256), packs channels as normalized NCHW float32 in [0,1], exports the 256x256 mask as PGM, and checks that the output is nonconstant. The workflow fetches a publicly available Pexels-licensed portrait from a third-party sample project, generates the input PPM and converts the mask into PNG. It uploads the source photo and mask for manual comparison, without uploading either into the repository.
 
 **The first real-image workflow result and visual mask quality are not yet verified in this record.** It must pass CI and be inspected before live inference is added to the OBS filter. The existing GPU ellipse diagnostic remains the verified on-device fallback.
+
+## Native dual-backend selector milestone (November 23, 2026)
+
+The OBS C plugin now exposes a persisted **AI engine (planned)** dropdown with MediaPipe and Robust Video Matting choices. Selection changes are logged as pending backends. The existing working GPU alpha ellipse diagnostic remains the only active filtering implementation, regardless of choice. The four refinement sliders also remain placeholders until neural masks are integrated.
+
+The selector deliberately does not initialize models or invoke ONNX Runtime. Before enabling an engine, implement a shared bounded async mask pipeline, manage per-source lifecycle, integrate and benchmark native models independently, and verify model weights redistribution licenses. RVM's recurrent state requires additional reset and frame ordering behavior.
+
+**Verification pending:** new Windows GitHub Actions build, packaging, and installation of a fresh OBS plugin artifact on a permitted machine. Last verified on-device artifact remains the ellipse diagnostic.
