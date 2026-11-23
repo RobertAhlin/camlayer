@@ -2,6 +2,7 @@
 // A constant BGRA frame is not a visual-quality test.
 #include "../src/ai-engine.h"
 #include "../src/ai-worker.h"
+#include "../src/ai-mask-refine.h"
 #include <chrono>
 #include <thread>
 #include <cmath>
@@ -39,6 +40,38 @@ int main(int argc, char **argv)
             std::cerr << "Invalid alpha value\n";
             return 1;
         }
+    }
+    // Regression test on synthetic masks, separate from model quality.
+    camlayer::MaskRefiner refiner;
+    std::vector<float> synthetic(camlayer::kPixels, 0.0f);
+    const int center = 128 * 256 + 128;
+    synthetic[center] = 1.0f;
+    refiner.process(synthetic.data(), 0.0f, 0.0f, 1000000000ULL);
+    if (synthetic[center] != 1.0f || synthetic[center - 1] != 0.0f) {
+        std::cerr << "Disabled controls changed the mask\n";
+        return 1;
+    }
+    refiner.reset();
+    refiner.process(synthetic.data(), 1.0f, 0.0f, 1100000000ULL);
+    if (!(synthetic[center] < 1.0f)) {
+        std::cerr << "Cleanup did not reduce isolated alpha\n";
+        return 1;
+    }
+    refiner.reset();
+    std::fill(synthetic.begin(), synthetic.end(), 0.0f);
+    synthetic[center] = 1.0f;
+    refiner.process(synthetic.data(), 0.0f, 1.0f, 1200000000ULL);
+    synthetic[center] = 0.95f;
+    refiner.process(synthetic.data(), 0.0f, 1.0f, 1300000000ULL);
+    if (!(synthetic[center] > 0.95f && synthetic[center] < 1.0f)) {
+        std::cerr << "Stability failed to smooth small changes\n";
+        return 1;
+    }
+    synthetic[center] = 0.0f;
+    refiner.process(synthetic.data(), 0.0f, 1.0f, 1400000000ULL);
+    if (!(synthetic[center] < 0.1f)) {
+        std::cerr << "Motion did not release old silhouette\n";
+        return 1;
     }
     // Confirm the same model can run outside the caller's thread.
     camlayer_worker *worker = camlayer_worker_create(CAMLAYER_BACKEND_MEDIAPIPE, argv[1]);
