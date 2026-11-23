@@ -1,6 +1,16 @@
 uniform float4x4 ViewProj;
 uniform texture2d image;
 uniform bool ellipse_enabled;
+uniform bool mask_enabled;
+uniform texture2d ai_mask;
+uniform float mask_threshold;
+uniform float edge_softness;
+
+sampler_state maskSampler {
+    Filter   = Linear;
+    AddressU = Clamp;
+    AddressV = Clamp;
+};
 
 sampler_state textureSampler {
     Filter   = Linear;
@@ -25,7 +35,12 @@ float4 PSAlphaDiagnostic(VertData v_in) : TARGET
 {
     float4 rgba = image.Sample(textureSampler, v_in.uv);
 
-    if (ellipse_enabled) {
+    if (mask_enabled) {
+        float raw = ai_mask.Sample(maskSampler, v_in.uv).r;
+        float edge = max(0.015, 0.055 + edge_softness * 0.035);
+        float alpha = smoothstep(mask_threshold - edge, mask_threshold + edge, raw);
+        rgba.a *= alpha;
+    } else if (ellipse_enabled) {
         float2 normalized = (v_in.uv - float2(0.5, 0.54)) /
                             float2(0.34, 0.48);
         float distance_from_center = length(normalized);
