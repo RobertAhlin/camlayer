@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "ai-worker.h"
 #include "ai-engine.h"
+#include "ai-mask-refine.h"
 #include <algorithm>
 #include <array>
 #include <condition_variable>
@@ -33,6 +34,9 @@ struct camlayer_worker {
     uint64_t completed_timestamp = 0;
     std::vector<uint8_t> queued;
     std::array<float, kMaskPixels> result{};
+    float cleanup = 0.0f;
+    float stability = 0.0f;
+    uint64_t reset_epoch = 0;
 
     camlayer_worker(int engine, const char *path)
         : backend(engine), model_path(path ? path : ""), queued(kPackedBytes) {}
@@ -61,23 +65,37 @@ static void run_worker(camlayer_worker *worker) noexcept
     }
     std::vector<uint8_t> local(kPackedBytes);
     std::array<float, kMaskPixels> computed{};
+    camlayer::MaskRefiner refiner;
+    uint64_t applied_epoch = 0;
     for (;;) {
         uint64_t timestamp = 0;
+        float cleanup = 0.0f;
+        float stability = 0.0f;
+        uint64_t epoch = 0;
         {
             std::unique_lock<std::mutex> lock(worker->mutex);
             worker->cv.wait(lock, [&] { return worker->stop || worker->pending; });
             if (worker->stop) break;
             local.swap(worker->queued);
             timestamp = worker->pending_timestamp;
+            cleanup = worker->cleanup;
+            stability = worker->stability;
+            epoch = worker->reset_epoch;
             worker->pending = false;
         }
         const int ok = camlayer_ai_segment_bgra(
             session, local.data(), kMaskSide, kMaskSide, kMaskSide * 4,
             computed.data(), computed.size());
         if (ok) {
+            if (epoch != applied_epoch) {
+                refiner.reset();
+                applied_epoch = epoch;
+            }
+            // The inference thread owns the entire mask processing state.
+            refiner.process(computed.data(), cleanup, stability, timestamp);
             std::lock_guard<std::mutex> lock(worker->mutex);
             // Drop old results if a newer frame arrived during inference.
-            if (!worker->pending && !worker->stop) {
+            if (!worker->pending && !worker->stop && epoch == worker->reset_epoch) {
                 worker->result = computed;
                 worker->completed_timestamp = timestamp;
                 worker->has_result = true;
@@ -172,4 +190,22 @@ extern "C" int camlayer_worker_get_status(camlayer_worker *worker)
     if (!worker) return CAMLAYER_WORKER_FAILED;
     std::lock_guard<std::mutex> lock(worker->mutex);
     return worker->status;
+}
+
+extern "C" void camlayer_worker_set_refinement(
+    camlayer_worker *worker, float cleanup, float stability)
+{
+    if (!worker) return;
+    std::lock_guard<std::mutex> lock(worker->mutex);
+    worker->cleanup = std::clamp(cleanup, 0.0f, 1.0f);
+    worker->stability = std::clamp(stability, 0.0f, 2.0f);
+}
+
+extern "C" void camlayer_worker_reset_refinement(camlayer_worker *worker)
+{
+    if (!worker) return;
+    std::lock_guard<std::mutex> lock(worker->mutex);
+    ++worker->reset_epoch;
+    worker->has_result = false;
+    worker->pending = false;
 }
