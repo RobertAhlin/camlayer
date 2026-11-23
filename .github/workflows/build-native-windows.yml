@@ -68,12 +68,11 @@ jobs:
           Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.lib' 'obs-template/dependencies/onnxruntime/onnxruntime.lib' -Force
           $cmake = 'obs-template/CMakeLists.txt'
           Add-Content $cmake @'
-
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ai-engine.cpp)
-target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/onnxruntime/include")
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/onnxruntime/onnxruntime.lib")
-'@
+          target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ai-engine.cpp)
+          target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
+          target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/onnxruntime/include")
+          target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/onnxruntime/onnxruntime.lib")
+          '@
           New-Item -ItemType Directory -Force -Path 'obs-template/data/locale' | Out-Null
           Copy-Item 'camlayer/native/obs-plugin/data/locale/en-US.ini' 'obs-template/data/locale/en-US.ini' -Force
           Copy-Item 'camlayer/native/obs-plugin/data/ellipse_alpha.effect' 'obs-template/data/ellipse_alpha.effect' -Force
