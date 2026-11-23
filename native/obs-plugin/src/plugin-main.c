@@ -8,6 +8,11 @@
 #include <obs-module.h>
 #include <util/bmem.h>
 #include "ai-engine.h"
+#include "ai-worker.h"
+#include <util/platform.h>
+#include <graphics/graphics.h>
+#include <math.h>
+#include <string.h>
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
@@ -20,6 +25,9 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_DIAGNOSTIC "diagnostic_alpha"
 #define SETTING_AI_ENGINE "ai_engine"
 #define SETTING_RUNTIME_TEST "enable_runtime_test"
+#define SETTING_LIVE_AI "enable_live_ai"
+#define CAMLAYER_MASK_SIDE 256
+#define CAMLAYER_CAPTURE_NS 100000000ULL
 
 /* Engine selection is persisted now. Live inference will follow in a later build. */
 enum camlayer_ai_engine {
@@ -44,6 +52,22 @@ struct camlayer_filter {
     enum camlayer_ai_engine engine;
     camlayer_ai_session *ai;
     bool runtime_test;
+    bool live_ai;
+    camlayer_worker *worker;
+    gs_texrender_t *capture;
+    gs_stagesurf_t *staging;
+    gs_texture_t *mask_texture;
+    gs_eparam_t *mask_parameter;
+    gs_eparam_t *mask_enabled_parameter;
+    gs_eparam_t *threshold_parameter;
+    gs_eparam_t *softness_parameter;
+    bool staging_ready;
+    bool mask_ready;
+    uint64_t last_capture;
+    uint32_t captured_width;
+    uint32_t captured_height;
+    float result_mask[CAMLAYER_MASK_SIDE * CAMLAYER_MASK_SIDE];
+    uint8_t mask_bytes[CAMLAYER_MASK_SIDE * CAMLAYER_MASK_SIDE];
 };
 
 static const char *camlayer_get_name(void *unused)
@@ -78,6 +102,24 @@ static void camlayer_update(void *data, obs_data_t *settings)
         filter->ai = NULL;
     }
     filter->runtime_test = wanted_test;
+    const bool live_ai = obs_data_get_bool(settings, SETTING_LIVE_AI);
+    if (filter->worker && (!live_ai || next_engine != CAMLAYER_AI_MEDIAPIPE ||
+                           filter->live_ai != live_ai)) {
+        camlayer_worker_destroy(filter->worker);
+        filter->worker = NULL;
+        filter->mask_ready = false;
+        filter->staging_ready = false;
+    }
+    filter->live_ai = live_ai;
+    if (live_ai && next_engine == CAMLAYER_AI_MEDIAPIPE && !filter->worker) {
+        char *model_path = obs_module_file("models/selfie_segmentation.onnx");
+        filter->worker = camlayer_worker_create(CAMLAYER_BACKEND_MEDIAPIPE, model_path);
+        if (filter->worker)
+            blog(LOG_INFO, "[CamLayer] Live MediaPipe inference worker started (experimental)");
+        else
+            blog(LOG_WARNING, "[CamLayer] Could not create live inference worker");
+        bfree(model_path);
+    }
     if (wanted_test && next_engine == CAMLAYER_AI_MEDIAPIPE && !filter->ai) {
         char *path = obs_module_file("models/selfie_segmentation.onnx");
         char error[512] = {0};
@@ -97,8 +139,12 @@ static void camlayer_destroy(void *data)
     if (!filter)
         return;
 
+    camlayer_worker_destroy(filter->worker);
     camlayer_ai_close(filter->ai);
     obs_enter_graphics();
+    gs_texture_destroy(filter->mask_texture);
+    gs_stagesurface_destroy(filter->staging);
+    gs_texrender_destroy(filter->capture);
     gs_effect_destroy(filter->alpha_effect);
     obs_leave_graphics();
     bfree(filter);
@@ -118,9 +164,18 @@ static void *camlayer_create(obs_data_t *settings, obs_source_t *source)
 
     obs_enter_graphics();
     filter->alpha_effect = gs_effect_create_from_file(effect_path, NULL);
-    if (filter->alpha_effect)
+    if (filter->alpha_effect) {
         filter->ellipse_parameter =
             gs_effect_get_param_by_name(filter->alpha_effect, "ellipse_enabled");
+        filter->mask_parameter =
+            gs_effect_get_param_by_name(filter->alpha_effect, "ai_mask");
+        filter->mask_enabled_parameter =
+            gs_effect_get_param_by_name(filter->alpha_effect, "mask_enabled");
+        filter->threshold_parameter =
+            gs_effect_get_param_by_name(filter->alpha_effect, "mask_threshold");
+        filter->softness_parameter =
+            gs_effect_get_param_by_name(filter->alpha_effect, "edge_softness");
+    }
     obs_leave_graphics();
 
     bfree(effect_path);
@@ -145,6 +200,7 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_bool(settings, SETTING_DIAGNOSTIC, false);
     obs_data_set_default_int(settings, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
     obs_data_set_default_bool(settings, SETTING_RUNTIME_TEST, false);
+    obs_data_set_default_bool(settings, SETTING_LIVE_AI, false);
 }
 
 static obs_properties_t *camlayer_properties(void *unused)
@@ -161,6 +217,8 @@ static obs_properties_t *camlayer_properties(void *unused)
                               CAMLAYER_AI_RVM);
     obs_properties_add_bool(props, SETTING_RUNTIME_TEST,
                             obs_module_text("CamLayer.RuntimeTest"));
+    obs_properties_add_bool(props, SETTING_LIVE_AI,
+                            obs_module_text("CamLayer.LiveAI"));
     obs_properties_add_text(props, "engine_info",
                             obs_module_text("CamLayer.EngineNotice"), OBS_TEXT_INFO);
 
@@ -180,6 +238,100 @@ static obs_properties_t *camlayer_properties(void *unused)
     return props;
 }
 
+/* Called exclusively from OBS's graphics render callback.
+ * Capture into a small staging surface rather than reading full HD frames.
+ * Map the previously staged frame before staging the next one.
+ */
+static void camlayer_sample_camera(struct camlayer_filter *filter)
+{
+    obs_source_t *target = obs_filter_get_target(filter->source);
+    if (!target || !filter->worker ||
+        camlayer_worker_get_status(filter->worker) != CAMLAYER_WORKER_READY)
+        return;
+
+    const uint32_t width = obs_source_get_width(target);
+    const uint32_t height = obs_source_get_height(target);
+    if (!width || !height)
+        return;
+    if (width != filter->captured_width || height != filter->captured_height) {
+        filter->captured_width = width;
+        filter->captured_height = height;
+        filter->staging_ready = false;
+        filter->mask_ready = false;
+    }
+    if (!filter->capture)
+        filter->capture = gs_texrender_create(GS_BGRA, GS_ZS_NONE);
+    if (!filter->staging)
+        filter->staging = gs_stagesurface_create(CAMLAYER_MASK_SIDE,
+                                                 CAMLAYER_MASK_SIDE, GS_BGRA);
+    if (!filter->capture || !filter->staging)
+        return;
+
+    const uint64_t now = os_gettime_ns();
+    if (now - filter->last_capture < CAMLAYER_CAPTURE_NS)
+        return;
+    filter->last_capture = now;
+
+    if (filter->staging_ready) {
+        uint8_t *pixels = NULL;
+        uint32_t stride = 0;
+        if (gs_stagesurface_map(filter->staging, &pixels, &stride)) {
+            camlayer_worker_submit(filter->worker, pixels, CAMLAYER_MASK_SIDE,
+                                    CAMLAYER_MASK_SIDE, stride, now);
+            gs_stagesurface_unmap(filter->staging);
+        }
+        filter->staging_ready = false;
+    }
+
+    gs_texrender_reset(filter->capture);
+    gs_blend_state_push();
+    gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+    if (gs_texrender_begin(filter->capture, CAMLAYER_MASK_SIDE,
+                            CAMLAYER_MASK_SIDE)) {
+        struct vec4 transparent = {0};
+        gs_clear(GS_CLEAR_COLOR, &transparent, 0.0f, 0);
+        gs_ortho(0.0f, (float)width, 0.0f, (float)height, -100.0f, 100.0f);
+        obs_source_video_render(target);
+        gs_texrender_end(filter->capture);
+        gs_texture_t *texture = gs_texrender_get_texture(filter->capture);
+        if (texture) {
+            gs_stage_texture(filter->staging, texture);
+            filter->staging_ready = true;
+        }
+    }
+    gs_blend_state_pop();
+}
+
+static void camlayer_publish_mask(struct camlayer_filter *filter)
+{
+    if (!filter->worker || !filter->live_ai || filter->diagnostic)
+        return;
+    uint64_t timestamp = 0;
+    if (!camlayer_worker_take_mask(filter->worker, filter->result_mask,
+                                   CAMLAYER_MASK_SIDE * CAMLAYER_MASK_SIDE,
+                                   &timestamp))
+        return;
+    for (size_t i = 0; i < CAMLAYER_MASK_SIDE * CAMLAYER_MASK_SIDE; i++) {
+        float v = filter->result_mask[i];
+        if (!isfinite(v)) v = 0.0f;
+        if (v < 0.0f) v = 0.0f;
+        if (v > 1.0f) v = 1.0f;
+        filter->mask_bytes[i] = (uint8_t)(v * 255.0f + 0.5f);
+    }
+    if (!filter->mask_texture) {
+        filter->mask_texture = gs_texture_create(
+            CAMLAYER_MASK_SIDE, CAMLAYER_MASK_SIDE, GS_R8, 1, NULL, GS_DYNAMIC);
+    }
+    if (filter->mask_texture) {
+        gs_texture_set_image(filter->mask_texture, filter->mask_bytes,
+                             CAMLAYER_MASK_SIDE, false);
+        if (!filter->mask_ready)
+            blog(LOG_INFO, "[CamLayer] First live MediaPipe alpha mask uploaded to GPU");
+        filter->mask_ready = true;
+    }
+    UNUSED_PARAMETER(timestamp);
+}
+
 static void camlayer_render(void *data, gs_effect_t *unused)
 {
     UNUSED_PARAMETER(unused);
@@ -187,8 +339,13 @@ static void camlayer_render(void *data, gs_effect_t *unused)
     if (!filter || !filter->alpha_effect)
         return;
 
+    if (filter->live_ai && !filter->diagnostic) {
+        camlayer_sample_camera(filter);
+        camlayer_publish_mask(filter);
+    }
+
     if (!obs_source_process_filter_begin(filter->source, GS_RGBA,
-                                          OBS_ALLOW_DIRECT_RENDERING))
+                                          OBS_NO_DIRECT_RENDERING))
         return;
 
     /* Both selections intentionally use the same safe pass-through/ellipse
@@ -196,6 +353,17 @@ static void camlayer_render(void *data, gs_effect_t *unused)
      * Never claim that switching the selector activates either model.
      */
     gs_effect_set_bool(filter->ellipse_parameter, filter->diagnostic);
+    const bool apply_mask = filter->live_ai && !filter->diagnostic &&
+                            filter->engine == CAMLAYER_AI_MEDIAPIPE &&
+                            filter->mask_ready && filter->mask_texture;
+    if (filter->mask_enabled_parameter)
+        gs_effect_set_bool(filter->mask_enabled_parameter, apply_mask);
+    if (filter->threshold_parameter)
+        gs_effect_set_float(filter->threshold_parameter, (float)filter->threshold);
+    if (filter->softness_parameter)
+        gs_effect_set_float(filter->softness_parameter, (float)filter->softness);
+    if (filter->mask_parameter && apply_mask)
+        gs_effect_set_texture(filter->mask_parameter, filter->mask_texture);
     obs_source_process_filter_end(filter->source, filter->alpha_effect, 0, 0);
 }
 
@@ -221,5 +389,5 @@ bool obs_module_load(void)
 
 const char *obs_module_description(void)
 {
-    return "CamLayer OBS filter, GPU alpha diagnostic (AI not implemented)";
+    return "CamLayer OBS background removal (experimental MediaPipe live alpha)";
 }
