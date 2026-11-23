@@ -1,7 +1,7 @@
 /*
- * CamLayer OBS filter: GPU alpha diagnostic, BEFORE native AI integration.
+ * CamLayer OBS filter: experimental native MediaPipe with GPU alpha rendering.
  *
- * The optional ellipse is a test mask, NOT person segmentation.
+ * The optional ellipse remains a diagnostic and is not person segmentation.
  * Rendering via OBS's graphics filter path avoids unsafe raw-frame lifetime
  * assumptions and handles the camera source's upstream pixel format in OBS.
  */
@@ -30,7 +30,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define CAMLAYER_MASK_SIDE 256
 #define CAMLAYER_CAPTURE_NS 100000000ULL
 
-/* Engine selection is persisted now. Live inference will follow in a later build. */
+/* MediaPipe provides experimental live inference; RVM remains unavailable. */
 enum camlayer_ai_engine {
     CAMLAYER_AI_MEDIAPIPE = 0,
     CAMLAYER_AI_RVM = 1,
@@ -87,6 +87,8 @@ static void camlayer_update(void *data, obs_data_t *settings)
     filter->softness = obs_data_get_double(settings, SETTING_SOFTNESS);
     filter->cleanup = obs_data_get_double(settings, SETTING_CLEANUP);
     filter->stability = obs_data_get_double(settings, SETTING_STABILITY);
+    camlayer_worker_set_refinement(filter->worker, (float)filter->cleanup,
+                                     (float)filter->stability);
     filter->diagnostic = obs_data_get_bool(settings, SETTING_DIAGNOSTIC);
     const enum camlayer_ai_engine selected =
         (enum camlayer_ai_engine)obs_data_get_int(settings, SETTING_AI_ENGINE);
@@ -119,6 +121,10 @@ static void camlayer_update(void *data, obs_data_t *settings)
             blog(LOG_INFO, "[CamLayer] Live MediaPipe inference worker started (experimental)");
         else
             blog(LOG_WARNING, "[CamLayer] Could not create live inference worker");
+        if (filter->worker)
+            camlayer_worker_set_refinement(filter->worker,
+                                           (float)filter->cleanup,
+                                           (float)filter->stability);
         bfree(model_path);
     }
     if (wanted_test && next_engine == CAMLAYER_AI_MEDIAPIPE && !filter->ai) {
@@ -257,6 +263,7 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
     if (!width || !height) {
         filter->mask_ready = false;
         filter->staging_ready = false;
+        camlayer_worker_reset_refinement(filter->worker);
         return;
     }
     if (width != filter->captured_width || height != filter->captured_height) {
@@ -264,6 +271,7 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
         filter->captured_height = height;
         filter->staging_ready = false;
         filter->mask_ready = false;
+        camlayer_worker_reset_refinement(filter->worker);
     }
     if (!filter->capture)
         filter->capture = gs_texrender_create(GS_BGRA, GS_ZS_NONE);
