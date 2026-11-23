@@ -11,6 +11,21 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 **Native OBS plugin:** bootstrap source code added; build and model integration pending  
 **Development status:** Browser-based segmentation and the temporary OBS Chroma Output have been tested. The long-term product target is now a native OBS video filter. Its first pass-through scaffold is committed but has not yet been compiled or installed.
 
+## License and open-source strategy
+
+**CamLayer is open source under [GNU GPL-3.0-only](LICENSE).** All new CamLayer-authored source code is developed openly, including the browser proof of concept, the native OBS plugin, and future AI-engine adapters.
+
+We plan to support **two selectable AI backends** in the native OBS plugin:
+
+- **MediaPipe:** a lighter and faster segmenter, already verified in the browser and in a standalone native ONNX test.
+- **Robust Video Matting (RVM):** a temporal video matting engine planned for improved moving-edge quality; this has **not** yet been implemented or benchmarked in CamLayer.
+
+Both engines will ultimately write to a common alpha-mask interface, letting the existing OBS GPU effect and familiar mask controls remain shared. Switching engines will require controlled disposal/reinitialization of model state. RVM's recurrent memory and frame-order handling will be implemented separately.
+
+**Important:** CamLayer's GPL license covers our own source. Third-party runtime libraries, model weights, test images and other assets retain their own terms. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) tracks these dependencies. In particular, RVM's GPL-3.0 source license does **not** establish the redistribution terms of every pretrained checkpoint; check those before bundling it.
+
+Commercial distribution of GPL software is permitted, provided the applicable license obligations are fulfilled. The project is not planned as closed-source or subscription-only software.
+
 ## Native AI engine validation (in progress)
 
 The native OBS GPU alpha diagnostic has already been verified by a real OBS test. The next implementation milestone is loading and running a person segmentation model in native Windows code.
