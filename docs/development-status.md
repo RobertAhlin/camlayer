@@ -249,3 +249,9 @@ The OBS C plugin now exposes a persisted **AI engine (planned)** dropdown with M
 The selector deliberately does not initialize models or invoke ONNX Runtime. Before enabling an engine, implement a shared bounded async mask pipeline, manage per-source lifecycle, integrate and benchmark native models independently, and verify model weights redistribution licenses. RVM's recurrent state requires additional reset and frame ordering behavior.
 
 **Verification pending:** new Windows GitHub Actions build, packaging, and installation of a fresh OBS plugin artifact on a permitted machine. Last verified on-device artifact remains the ellipse diagnostic.
+
+## Native OBS ONNX model integration infrastructure (November 23, 2026)
+
+Created `native/obs-plugin/src/ai-engine.h` and `ai-engine.cpp` with a C ABI for ONNX Runtime session lifecycle and 256x256 alpha-mask inference from arbitrary-sized BGRA input frames. This code is now compiled into the OBS DLL in the Windows workflow, with the pinned model (SHA256 verified) and `onnxruntime.dll` packaged alongside it. A new `native-engine-smoke.cpp` tests this same library with a synthetic BGRA frame. The OBS settings now include an explicitly experimental checkbox that attempts to load the MediaPipe session and logs success/failure. It is off by default and does not alter the verified ellipse diagnostic.
+
+**Verification pending:** the updated Windows CI run and real OBS loading of the bundled model/runtime. This change does **not** yet capture or segment live camera frames, update a GPU mask texture, or enable RVM. The immediate follow-up is to verify CI compilation and DLL dependencies before implementing a bounded, asynchronous capture/inference/mask pipeline.
