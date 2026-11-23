@@ -15,7 +15,7 @@ CamLayer is an experimental, browser-based real-time webcam background removal a
 
 **CamLayer is open source under [GNU GPL-3.0-only](LICENSE).** All new CamLayer-authored source code is developed openly, including the browser proof of concept, the native OBS plugin, and future AI-engine adapters.
 
-We plan to support **two selectable AI backends** in the native OBS plugin:
+We are building **two selectable AI backends** in the native OBS plugin. A first OBS dropdown now stores the selected engine, but **does not yet run live model inference**:
 
 - **MediaPipe:** a lighter and faster segmenter, already verified in the browser and in a standalone native ONNX test.
 - **Robust Video Matting (RVM):** a temporal video matting engine planned for improved moving-edge quality; this has **not** yet been implemented or benchmarked in CamLayer.
