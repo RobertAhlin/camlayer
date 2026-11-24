@@ -36,6 +36,7 @@ struct camlayer_worker {
     std::array<float, kMaskPixels> result{};
     float cleanup = 0.0f;
     float stability = 0.0f;
+    float follow_speed = 1.0f;
     uint64_t reset_epoch = 0;
 
     camlayer_worker(int engine, const char *path)
@@ -71,6 +72,7 @@ static void run_worker(camlayer_worker *worker) noexcept
         uint64_t timestamp = 0;
         float cleanup = 0.0f;
         float stability = 0.0f;
+        float follow_speed = 1.0f;
         uint64_t epoch = 0;
         {
             std::unique_lock<std::mutex> lock(worker->mutex);
@@ -80,6 +82,7 @@ static void run_worker(camlayer_worker *worker) noexcept
             timestamp = worker->pending_timestamp;
             cleanup = worker->cleanup;
             stability = worker->stability;
+            follow_speed = worker->follow_speed;
             epoch = worker->reset_epoch;
             worker->pending = false;
         }
@@ -92,7 +95,7 @@ static void run_worker(camlayer_worker *worker) noexcept
                 applied_epoch = epoch;
             }
             // The inference thread owns the entire mask processing state.
-            refiner.process(computed.data(), cleanup, stability, timestamp);
+            refiner.process(computed.data(), cleanup, stability, follow_speed, timestamp);
             std::lock_guard<std::mutex> lock(worker->mutex);
             // Drop old results if a newer frame arrived during inference.
             if (!worker->pending && !worker->stop && epoch == worker->reset_epoch) {
@@ -193,12 +196,13 @@ extern "C" int camlayer_worker_get_status(camlayer_worker *worker)
 }
 
 extern "C" void camlayer_worker_set_refinement(
-    camlayer_worker *worker, float cleanup, float stability)
+    camlayer_worker *worker, float cleanup, float stability, float follow_speed)
 {
     if (!worker) return;
     std::lock_guard<std::mutex> lock(worker->mutex);
     worker->cleanup = std::clamp(cleanup, 0.0f, 1.0f);
     worker->stability = std::clamp(stability, 0.0f, 2.0f);
+    worker->follow_speed = std::clamp(follow_speed, 0.0f, 2.0f);
 }
 
 extern "C" void camlayer_worker_reset_refinement(camlayer_worker *worker)
