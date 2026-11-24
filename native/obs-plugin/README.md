@@ -1,8 +1,8 @@
 # Native CamLayer OBS Filter
 
-**Status:** The original pass-through bootstrap was successfully compiled on Windows via GitHub Actions. A new GPU alpha diagnostic has now been added, but its updated build and OBS behavior are not yet verified. AI person segmentation is not yet integrated.
+**Status:** The native CamLayer filter has been tested successfully with live MediaPipe background removal in OBS 33.0.1 on both an internal HP webcam and an external Sandberg webcam. Signed softness, feathering, cleanup, stability and follow speed have been tested interactively. The new optional advanced color-aware refinement has been committed but its Windows CI result and on-device effect still need verification. RVM remains unimplemented.
 
-This folder is the starting point for a native OBS Studio plugin intended to work as a filter on a normal **Video Capture Device** source, without a second camera connection or a Chrome window.
+This folder contains the native OBS Studio video effect plugin, applied directly to a normal **Video Capture Device** source without opening another camera connection or a Chrome window.
 
 ## Files
 
@@ -18,7 +18,7 @@ This folder is the starting point for a native OBS Studio plugin intended to wor
 3. Add **CamLayer AI Background Removal** under **Effect Filters** or the appropriate asynchronous video filter category.
 4. Configure threshold, softness, cleanup and stability.
 
-**This is the eventual AI workflow, not a working AI feature yet.** The present version has an **optional ellipse diagnostic alpha effect** but does not identify a person.
+**Live MediaPipe background removal has been verified in OBS.** The optional ellipse remains as a GPU transparency diagnostic. The advanced color-aware refinement is experimental, must be explicitly enabled, and still needs on-device validation.
 
 ## Important engineering constraints
 
