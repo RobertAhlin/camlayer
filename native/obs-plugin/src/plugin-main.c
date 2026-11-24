@@ -91,8 +91,9 @@ static void camlayer_update(void *data, obs_data_t *settings)
     filter->cleanup = obs_data_get_double(settings, SETTING_CLEANUP);
     filter->stability = obs_data_get_double(settings, SETTING_STABILITY);
     filter->follow_speed = obs_data_get_double(settings, SETTING_FOLLOW_SPEED);
-    camlayer_worker_set_refinement(filter->worker, (float)filter->cleanup,
-                                   (float)filter->stability,
+    camlayer_worker_set_refinement(filter->worker,
+                                   (float)filter->threshold, (float)filter->softness,
+                                   (float)filter->cleanup, (float)filter->stability,
                                    (float)filter->follow_speed);
     filter->diagnostic = obs_data_get_bool(settings, SETTING_DIAGNOSTIC);
     const enum camlayer_ai_engine selected =
@@ -128,8 +129,8 @@ static void camlayer_update(void *data, obs_data_t *settings)
             blog(LOG_WARNING, "[CamLayer] Could not create live inference worker");
         if (filter->worker)
             camlayer_worker_set_refinement(filter->worker,
-                                           (float)filter->cleanup,
-                                           (float)filter->stability,
+                                           (float)filter->threshold, (float)filter->softness,
+                                           (float)filter->cleanup, (float)filter->stability,
                                            (float)filter->follow_speed);
         bfree(model_path);
     }
@@ -247,7 +248,7 @@ static obs_properties_t *camlayer_properties(void *unused)
     obs_properties_add_float_slider(props, SETTING_STABILITY,
                                     obs_module_text("CamLayer.Stability"), 0.0, 2.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_FOLLOW_SPEED,
-                                    obs_module_text("CamLayer.FollowSpeed"), 0.0, 2.0, 0.05);
+                                    obs_module_text("CamLayer.FollowSpeed"), 0.0, 5.0, 0.05);
     obs_properties_add_text(props, "bootstrap_info",
                             obs_module_text("CamLayer.BootstrapNotice"),
                             OBS_TEXT_INFO);
@@ -293,10 +294,10 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
         return;
 
     const uint64_t now = os_gettime_ns();
-    /* Follow speed 0 -> 10 Hz, 1 -> 20 Hz, 2 -> 30 Hz.
+    /* Follow speed 0 -> 10 Hz, 1 -> 20 Hz, 2 -> 30 Hz, 5 -> 60 Hz.
      * Actual mask FPS may remain below this rate on slower CPUs.
      */
-    const double follow = fmax(0.0, fmin(2.0, filter->follow_speed));
+    const double follow = fmax(0.0, fmin(5.0, filter->follow_speed));
     const uint64_t capture_interval = (uint64_t)(100000000.0 / (1.0 + follow));
     if (now - filter->last_capture < capture_interval)
         return;
