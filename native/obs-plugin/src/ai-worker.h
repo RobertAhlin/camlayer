@@ -39,7 +39,7 @@ int camlayer_worker_take_mask(camlayer_worker *worker, float *dst,
                               size_t capacity, uint64_t *source_timestamp);
 /* Thread-safe live settings. Independent per camera/filter instance. */
 void camlayer_worker_set_refinement(camlayer_worker *worker, float cleanup,
-                                    float stability);
+                                    float stability, float follow_speed);
 /* Clears temporal state after camera disconnect or geometry change. */
 void camlayer_worker_reset_refinement(camlayer_worker *worker);
 int camlayer_worker_get_status(camlayer_worker *worker);
