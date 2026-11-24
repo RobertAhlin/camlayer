@@ -61,6 +61,16 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## True alpha feathering after signed edge adjustment (experimental)
+
+Testing with the Sandberg external webcam revealed that the initial signed `Edge Softness` implementation mainly **moved the silhouette**. It did not create a visibly smooth opacity transition like a feather control.
+
+The native worker now applies a separable Gaussian blur to the **finished alpha mask after inward/outward morphology**. The signed control is unchanged: negative values contract the mask, positive values expand it, and zero leaves the original thresholded alpha untouched. Its magnitude now controls both the geometric displacement and the amount and width of feathering. The Gaussian result is blended with the signed-morphology result, retaining an identifiable edge while creating genuinely translucent boundary pixels.
+
+This processing runs on the inference worker, not the OBS graphics thread; it uses preallocated mask buffers and no per-frame heap allocations. Additional synthetic regression tests demand partial transparency at both +0.36 and -0.36, rather than accepting a merely shifted hard edge.
+
+**Limitations:** Gaussian smoothing of a 256x256 confidence mask does not reconstruct fine hair strands or prevent dark/bright background contamination at the cutout boundary. Very high softness values can lose detail, and added CPU cost may reduce mask throughput on slower systems. Model quality and actual OBS appearance remain subject to visual testing. RVM remains planned separately.
+
 ## Signed softness parity and follow speed 0–5 (experimental)
 
 The browser `src/mask-processor.mjs` uses a signed morphological operation **after thresholding**, not only a shader smoothstep-width adjustment. Native CamLayer now uses the same overall approach on the inference worker: threshold the confidence mask with smoothstep and apply a separable min (negative softness contracts the foreground) or max (positive softness expands the foreground) filter at 256px mask resolution. Mask movement blends continuously from zero with a radius scaled to the model image size. The GPU shader now samples the finished alpha directly, without a second cutoff that would undo the effect. Edge softness may change outline geometry and should be used with care around hair and hands.
