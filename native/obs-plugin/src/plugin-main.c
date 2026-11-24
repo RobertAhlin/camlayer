@@ -28,6 +28,18 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_AI_ENGINE "ai_engine"
 #define SETTING_RUNTIME_TEST "enable_runtime_test"
 #define SETTING_LIVE_AI "enable_live_ai"
+#define SETTING_ADVANCED "use_advanced_settings"
+#define SETTING_COLOR_ENABLE "color_refinement"
+#define SETTING_COLOR_STRENGTH "color_strength"
+#define SETTING_BG_COLOR "background_color"
+#define SETTING_HAIR_COLOR "hair_color"
+#define SETTING_SKIN_COLOR "skin_color"
+#define SETTING_CLOTH_COLOR "clothing_color"
+#define SETTING_BG_TOL "background_tolerance"
+#define SETTING_HAIR_TOL "hair_tolerance"
+#define SETTING_SKIN_TOL "skin_tolerance"
+#define SETTING_CLOTH_TOL "clothing_tolerance"
+#define ADVANCED_GROUP "advanced_color_group"
 #define CAMLAYER_MASK_SIDE 256
 /* Capture rate follows the control: 10 to 30 requested frames per second. */
 
@@ -51,6 +63,7 @@ struct camlayer_filter {
     double cleanup;
     double stability;
     double follow_speed;
+    bool advanced;
     bool diagnostic;
     enum camlayer_ai_engine engine;
     camlayer_ai_session *ai;
@@ -91,6 +104,7 @@ static void camlayer_update(void *data, obs_data_t *settings)
     filter->cleanup = obs_data_get_double(settings, SETTING_CLEANUP);
     filter->stability = obs_data_get_double(settings, SETTING_STABILITY);
     filter->follow_speed = obs_data_get_double(settings, SETTING_FOLLOW_SPEED);
+    filter->advanced = obs_data_get_bool(settings, SETTING_ADVANCED);
     camlayer_worker_set_refinement(filter->worker,
                                    (float)filter->threshold, (float)filter->softness,
                                    (float)filter->cleanup, (float)filter->stability,
@@ -134,6 +148,27 @@ static void camlayer_update(void *data, obs_data_t *settings)
                                            (float)filter->follow_speed);
         bfree(model_path);
     }
+    camlayer_color_config color = {0};
+    color.enabled = filter->advanced &&
+                    obs_data_get_bool(settings, SETTING_COLOR_ENABLE);
+    color.strength = (float)obs_data_get_double(settings, SETTING_COLOR_STRENGTH);
+    color.rgb[CAMLAYER_COLOR_BACKGROUND] =
+        (uint32_t)obs_data_get_int(settings, SETTING_BG_COLOR);
+    color.rgb[CAMLAYER_COLOR_HAIR] =
+        (uint32_t)obs_data_get_int(settings, SETTING_HAIR_COLOR);
+    color.rgb[CAMLAYER_COLOR_SKIN] =
+        (uint32_t)obs_data_get_int(settings, SETTING_SKIN_COLOR);
+    color.rgb[CAMLAYER_COLOR_CLOTHING] =
+        (uint32_t)obs_data_get_int(settings, SETTING_CLOTH_COLOR);
+    color.tolerance[CAMLAYER_COLOR_BACKGROUND] =
+        (float)obs_data_get_double(settings, SETTING_BG_TOL);
+    color.tolerance[CAMLAYER_COLOR_HAIR] =
+        (float)obs_data_get_double(settings, SETTING_HAIR_TOL);
+    color.tolerance[CAMLAYER_COLOR_SKIN] =
+        (float)obs_data_get_double(settings, SETTING_SKIN_TOL);
+    color.tolerance[CAMLAYER_COLOR_CLOTHING] =
+        (float)obs_data_get_double(settings, SETTING_CLOTH_TOL);
+    camlayer_worker_set_color_config(filter->worker, &color);
     if (wanted_test && next_engine == CAMLAYER_AI_MEDIAPIPE && !filter->ai) {
         char *path = obs_module_file("models/selfie_segmentation.onnx");
         char error[512] = {0};
@@ -216,11 +251,32 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_int(settings, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
     obs_data_set_default_bool(settings, SETTING_RUNTIME_TEST, false);
     obs_data_set_default_bool(settings, SETTING_LIVE_AI, false);
+    obs_data_set_default_bool(settings, SETTING_ADVANCED, false);
+    obs_data_set_default_bool(settings, SETTING_COLOR_ENABLE, false);
+    obs_data_set_default_double(settings, SETTING_COLOR_STRENGTH, 35.0);
+    obs_data_set_default_int(settings, SETTING_BG_COLOR, 0x808080);
+    obs_data_set_default_int(settings, SETTING_HAIR_COLOR, 0x77736D);
+    obs_data_set_default_int(settings, SETTING_SKIN_COLOR, 0xC69A80);
+    obs_data_set_default_int(settings, SETTING_CLOTH_COLOR, 0x494B49);
+    obs_data_set_default_double(settings, SETTING_BG_TOL, 25.0);
+    obs_data_set_default_double(settings, SETTING_HAIR_TOL, 25.0);
+    obs_data_set_default_double(settings, SETTING_SKIN_TOL, 20.0);
+    obs_data_set_default_double(settings, SETTING_CLOTH_TOL, 30.0);
 }
 
-static obs_properties_t *camlayer_properties(void *unused)
+static bool camlayer_advanced_modified(obs_properties_t *props,
+                                       obs_property_t *property,
+                                       obs_data_t *settings)
 {
-    UNUSED_PARAMETER(unused);
+    UNUSED_PARAMETER(property);
+    obs_property_t *group = obs_properties_get(props, ADVANCED_GROUP);
+    if (!group) return false;
+    obs_property_set_visible(group, obs_data_get_bool(settings, SETTING_ADVANCED));
+    return true;
+}
+
+static obs_properties_t *camlayer_properties(void *data)
+{
     obs_properties_t *props = obs_properties_create();
 
     obs_property_t *engine = obs_properties_add_list(
@@ -252,6 +308,43 @@ static obs_properties_t *camlayer_properties(void *unused)
     obs_properties_add_text(props, "bootstrap_info",
                             obs_module_text("CamLayer.BootstrapNotice"),
                             OBS_TEXT_INFO);
+
+    obs_property_t *advanced_toggle = obs_properties_add_bool(
+        props, SETTING_ADVANCED, obs_module_text("CamLayer.UseAdvanced"));
+    obs_property_set_modified_callback(advanced_toggle, camlayer_advanced_modified);
+    obs_properties_t *advanced_props = obs_properties_create();
+    obs_properties_add_bool(advanced_props, SETTING_COLOR_ENABLE,
+                            obs_module_text("CamLayer.ColorEnable"));
+    obs_properties_add_text(advanced_props, "advanced_color_info",
+                            obs_module_text("CamLayer.ColorNotice"), OBS_TEXT_INFO);
+    obs_properties_add_color(advanced_props, SETTING_BG_COLOR,
+                             obs_module_text("CamLayer.BgColor"));
+    obs_properties_add_float_slider(advanced_props, SETTING_BG_TOL,
+                                    obs_module_text("CamLayer.BgTolerance"),
+                                    0.0, 100.0, 1.0);
+    obs_properties_add_color(advanced_props, SETTING_HAIR_COLOR,
+                             obs_module_text("CamLayer.HairColor"));
+    obs_properties_add_float_slider(advanced_props, SETTING_HAIR_TOL,
+                                    obs_module_text("CamLayer.HairTolerance"),
+                                    0.0, 100.0, 1.0);
+    obs_properties_add_color(advanced_props, SETTING_SKIN_COLOR,
+                             obs_module_text("CamLayer.SkinColor"));
+    obs_properties_add_float_slider(advanced_props, SETTING_SKIN_TOL,
+                                    obs_module_text("CamLayer.SkinTolerance"),
+                                    0.0, 100.0, 1.0);
+    obs_properties_add_color(advanced_props, SETTING_CLOTH_COLOR,
+                             obs_module_text("CamLayer.ClothingColor"));
+    obs_properties_add_float_slider(advanced_props, SETTING_CLOTH_TOL,
+                                    obs_module_text("CamLayer.ClothingTolerance"),
+                                    0.0, 100.0, 1.0);
+    obs_properties_add_float_slider(advanced_props, SETTING_COLOR_STRENGTH,
+                                    obs_module_text("CamLayer.ColorStrength"),
+                                    0.0, 100.0, 1.0);
+    obs_property_t *advanced_group = obs_properties_add_group(
+        props, ADVANCED_GROUP, obs_module_text("CamLayer.ColorGroup"),
+        OBS_GROUP_NORMAL, advanced_props);
+    const struct camlayer_filter *filter = data;
+    obs_property_set_visible(advanced_group, filter && filter->advanced);
     return props;
 }
 
