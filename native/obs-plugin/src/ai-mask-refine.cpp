@@ -9,10 +9,11 @@ void MaskRefiner::reset() noexcept {
     last_timestamp = 0;
 }
 void MaskRefiner::process(float *mask, float cleanup, float stability,
-                          uint64_t timestamp) noexcept {
+                          float follow_speed, uint64_t timestamp) noexcept {
     if (!mask) return;
     cleanup = std::clamp(cleanup, 0.0f, 1.0f);
     stability = std::clamp(stability, 0.0f, 2.0f);
+    follow_speed = std::clamp(follow_speed, 0.0f, 2.0f);
     // Preserve exact original values when cleanup is zero.
     if (cleanup > 0.0f) {
         for (int y = 0; y < kSide; ++y) {
@@ -48,8 +49,11 @@ void MaskRefiner::process(float *mask, float cleanup, float stability,
             const float current = std::clamp(mask[i], 0.0f, 1.0f);
             const float prior = previous[i];
             const float delta = std::fabs(current - prior);
-            // Fast motion must replace old silhouettes rapidly.
-            const float motion_gate = std::clamp(1.0f - delta * 2.0f, 0.1f, 1.0f);
+            // Follow speed is independent of stability: higher values
+            // release history more aggressively as the current mask changes.
+            // Stationary pixels retain stability smoothing at any speed.
+            const float motion_gate = std::clamp(
+                1.0f - delta * (2.0f + follow_speed * 3.0f), 0.0f, 1.0f);
             mask[i] = current + history * motion_gate * (prior - current);
         }
     }
