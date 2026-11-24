@@ -40,6 +40,7 @@ struct camlayer_worker {
     float cleanup = 0.0f;
     float stability = 0.0f;
     float follow_speed = 1.0f;
+    camlayer_color_config color = {};
     uint64_t reset_epoch = 0;
 
     camlayer_worker(int engine, const char *path)
@@ -86,6 +87,7 @@ static void run_worker(camlayer_worker *worker) noexcept
         float cleanup = 0.0f;
         float stability = 0.0f;
         float follow_speed = 1.0f;
+        camlayer_color_config color = {};
         uint64_t epoch = 0;
         {
             std::unique_lock<std::mutex> lock(worker->mutex);
@@ -98,6 +100,7 @@ static void run_worker(camlayer_worker *worker) noexcept
             cleanup = worker->cleanup;
             stability = worker->stability;
             follow_speed = worker->follow_speed;
+            color = worker->color;
             epoch = worker->reset_epoch;
             worker->pending = false;
         }
@@ -112,6 +115,8 @@ static void run_worker(camlayer_worker *worker) noexcept
             // The inference thread owns the entire mask processing state.
             refiner->process(computed.data(), cleanup, stability, follow_speed, timestamp);
             refiner->finish_alpha(computed.data(), threshold, softness);
+            camlayer_color_refine(computed.data(), computed.size(),
+                                  local.data(), local.size(), &color);
             std::lock_guard<std::mutex> lock(worker->mutex);
             // Publish each completed mask even when a newer frame is queued.
             // The one-slot queue remains bounded; skipping all results under
@@ -234,4 +239,12 @@ extern "C" void camlayer_worker_reset_refinement(camlayer_worker *worker)
     ++worker->reset_epoch;
     worker->has_result = false;
     worker->pending = false;
+}
+
+extern "C" void camlayer_worker_set_color_config(
+    camlayer_worker *worker, const camlayer_color_config *config)
+{
+    if (!worker || !config) return;
+    std::lock_guard<std::mutex> lock(worker->mutex);
+    worker->color = *config;
 }
