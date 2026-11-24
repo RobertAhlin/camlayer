@@ -112,8 +112,19 @@ int main(int argc, char **argv)
     feather->finish_alpha(neutral.data(), 0.5f, 0.0f);
     feather->finish_alpha(expanded.data(), 0.5f, 1.0f);
     feather->finish_alpha(contracted.data(), 0.5f, -1.0f);
+    // A modest softness value must generate a genuine translucent
+    // transition, not just shift an otherwise binary mask outline.
+    auto softly_expanded = base;
+    auto softly_contracted = base;
+    feather->finish_alpha(softly_expanded.data(), 0.5f, 0.36f);
+    feather->finish_alpha(softly_contracted.data(), 0.5f, -0.36f);
     const int outside = 120 * 256 + 99;
     const int inside = 120 * 256 + 100;
+    if (!(softly_expanded[outside] > 0.0f && softly_expanded[outside] < 1.0f &&
+          softly_contracted[inside] > 0.0f && softly_contracted[inside] < 1.0f)) {
+        std::cerr << "Moderate softness did not create partially transparent edges\\n";
+        return 1;
+    }
     if (!(neutral[outside] == 0.0f && neutral[inside] == 1.0f &&
           expanded[outside] > 0.0f && contracted[inside] < 1.0f)) {
         std::cerr << "Signed softness boundary behavior failed\n";
