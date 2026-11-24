@@ -99,6 +99,36 @@ int main(int argc, char **argv)
         std::cerr << "Follow speed state reset failed\\n";
         return 1;
     }
+    // Browser-style softness: positive expands, negative contracts.
+    auto feather = std::make_unique<camlayer::MaskRefiner>();
+    std::vector<float> base(camlayer::kPixels, 0.0f);
+    for (int y = 100; y < 140; ++y) {
+        for (int x = 100; x < 140; ++x)
+            base[y * 256 + x] = 1.0f;
+    }
+    auto neutral = base;
+    auto expanded = base;
+    auto contracted = base;
+    feather->finish_alpha(neutral.data(), 0.5f, 0.0f);
+    feather->finish_alpha(expanded.data(), 0.5f, 1.0f);
+    feather->finish_alpha(contracted.data(), 0.5f, -1.0f);
+    const int outside = 120 * 256 + 99;
+    const int inside = 120 * 256 + 100;
+    if (!(neutral[outside] == 0.0f && neutral[inside] == 1.0f &&
+          expanded[outside] > 0.0f && contracted[inside] < 1.0f)) {
+        std::cerr << "Signed softness boundary behavior failed\n";
+        return 1;
+    }
+    auto max_speed = std::make_unique<camlayer::MaskRefiner>();
+    std::vector<float> max_mask(camlayer::kPixels, 0.0f);
+    max_mask[center] = 0.70f;
+    max_speed->process(max_mask.data(), 0.0f, 1.5f, 5.0f, 2000000000ULL);
+    max_mask[center] = 0.50f;
+    max_speed->process(max_mask.data(), 0.0f, 1.5f, 5.0f, 2100000000ULL);
+    if (!(max_mask[center] <= slow_mask[center])) {
+        std::cerr << "Follow speed 5 did not release history promptly\n";
+        return 1;
+    }
     // Confirm the same model can run outside the caller's thread.
     camlayer_worker *worker = camlayer_worker_create(CAMLAYER_BACKEND_MEDIAPIPE, argv[1]);
     if (!worker) return 1;
