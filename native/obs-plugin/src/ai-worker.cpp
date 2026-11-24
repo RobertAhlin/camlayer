@@ -35,6 +35,8 @@ struct camlayer_worker {
     uint64_t completed_timestamp = 0;
     std::vector<uint8_t> queued;
     std::array<float, kMaskPixels> result{};
+    float threshold = 0.50f;
+    float softness = 0.0f;
     float cleanup = 0.0f;
     float stability = 0.0f;
     float follow_speed = 1.0f;
@@ -79,6 +81,8 @@ static void run_worker(camlayer_worker *worker) noexcept
     uint64_t applied_epoch = 0;
     for (;;) {
         uint64_t timestamp = 0;
+        float threshold = 0.50f;
+        float softness = 0.0f;
         float cleanup = 0.0f;
         float stability = 0.0f;
         float follow_speed = 1.0f;
@@ -89,6 +93,8 @@ static void run_worker(camlayer_worker *worker) noexcept
             if (worker->stop) break;
             local.swap(worker->queued);
             timestamp = worker->pending_timestamp;
+            threshold = worker->threshold;
+            softness = worker->softness;
             cleanup = worker->cleanup;
             stability = worker->stability;
             follow_speed = worker->follow_speed;
@@ -105,6 +111,7 @@ static void run_worker(camlayer_worker *worker) noexcept
             }
             // The inference thread owns the entire mask processing state.
             refiner->process(computed.data(), cleanup, stability, follow_speed, timestamp);
+            refiner->finish_alpha(computed.data(), threshold, softness);
             std::lock_guard<std::mutex> lock(worker->mutex);
             // Publish each completed mask even when a newer frame is queued.
             // The one-slot queue remains bounded; skipping all results under
@@ -208,13 +215,16 @@ extern "C" int camlayer_worker_get_status(camlayer_worker *worker)
 }
 
 extern "C" void camlayer_worker_set_refinement(
-    camlayer_worker *worker, float cleanup, float stability, float follow_speed)
+    camlayer_worker *worker, float threshold, float softness,
+    float cleanup, float stability, float follow_speed)
 {
     if (!worker) return;
     std::lock_guard<std::mutex> lock(worker->mutex);
+    worker->threshold = std::clamp(threshold, 0.15f, 0.85f);
+    worker->softness = std::clamp(softness, -2.0f, 2.0f);
     worker->cleanup = std::clamp(cleanup, 0.0f, 1.0f);
     worker->stability = std::clamp(stability, 0.0f, 2.0f);
-    worker->follow_speed = std::clamp(follow_speed, 0.0f, 2.0f);
+    worker->follow_speed = std::clamp(follow_speed, 0.0f, 5.0f);
 }
 
 extern "C" void camlayer_worker_reset_refinement(camlayer_worker *worker)
