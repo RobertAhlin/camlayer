@@ -3,6 +3,7 @@
 #include "../src/ai-engine.h"
 #include "../src/ai-worker.h"
 #include "../src/ai-mask-refine.h"
+#include "../src/ai-color-refine.h"
 #include <algorithm>
 #include <chrono>
 #include <thread>
@@ -138,6 +139,71 @@ int main(int argc, char **argv)
     max_speed->process(max_mask.data(), 0.0f, 1.5f, 5.0f, 2100000000ULL);
     if (!(max_mask[center] <= slow_mask[center])) {
         std::cerr << "Follow speed 5 did not release history promptly\n";
+        return 1;
+    }
+    // Advanced mode must be inert when disabled and conservative for
+    // ambiguous pixels; it must distinguish clear foreground/background
+    // evidence only at uncertain edges.
+    camlayer_color_config colors = {};
+    colors.enabled = 0;
+    colors.strength = 100.0f;
+    colors.rgb[CAMLAYER_COLOR_BACKGROUND] = 0x888888;
+    colors.rgb[CAMLAYER_COLOR_HAIR] = 0x554433;
+    colors.rgb[CAMLAYER_COLOR_SKIN] = 0xC99D83;
+    colors.rgb[CAMLAYER_COLOR_CLOTHING] = 0x303030;
+    for (int role = 0; role < CAMLAYER_COLOR_COUNT; ++role)
+        colors.tolerance[role] = 25.0f;
+    std::vector<float> color_alpha(camlayer::kPixels, 0.5f);
+    std::vector<uint8_t> color_frame(camlayer::kPixels * 4, 0);
+    for (size_t i = 0; i < color_frame.size(); i += 4) {
+        color_frame[i] = 0x88; // BGRA background reference
+        color_frame[i + 1] = 0x88;
+        color_frame[i + 2] = 0x88;
+        color_frame[i + 3] = 0xFF;
+    }
+    camlayer_color_refine(color_alpha.data(), color_alpha.size(),
+                          color_frame.data(), color_frame.size(), &colors);
+    if (color_alpha[0] != 0.5f) {
+        std::cerr << "Disabled advanced refinement changed the mask\n";
+        return 1;
+    }
+    colors.enabled = 1;
+    camlayer_color_refine(color_alpha.data(), color_alpha.size(),
+                          color_frame.data(), color_frame.size(), &colors);
+    if (!(color_alpha[0] < 0.5f)) {
+        std::cerr << "Background reference failed to reduce edge alpha\n";
+        return 1;
+    }
+    std::fill(color_alpha.begin(), color_alpha.end(), 0.5f);
+    for (size_t i = 0; i < color_frame.size(); i += 4) {
+        color_frame[i] = 0x33;
+        color_frame[i + 1] = 0x44;
+        color_frame[i + 2] = 0x55;
+    }
+    camlayer_color_refine(color_alpha.data(), color_alpha.size(),
+                          color_frame.data(), color_frame.size(), &colors);
+    if (!(color_alpha[0] > 0.5f)) {
+        std::cerr << "Foreground reference failed to protect edge alpha\n";
+        return 1;
+    }
+    std::fill(color_alpha.begin(), color_alpha.end(), 0.5f);
+    colors.rgb[CAMLAYER_COLOR_HAIR] = colors.rgb[CAMLAYER_COLOR_BACKGROUND];
+    for (size_t i = 0; i < color_frame.size(); i += 4) {
+        color_frame[i] = color_frame[i + 1] = color_frame[i + 2] = 0x88;
+    }
+    camlayer_color_refine(color_alpha.data(), color_alpha.size(),
+                          color_frame.data(), color_frame.size(), &colors);
+    if (color_alpha[0] != 0.5f) {
+        std::cerr << "Ambiguous matching foreground/background must be neutral\n";
+        return 1;
+    }
+    // Fully opaque person and fully transparent background are immutable.
+    color_alpha[0] = 1.0f;
+    color_alpha[1] = 0.0f;
+    camlayer_color_refine(color_alpha.data(), color_alpha.size(),
+                          color_frame.data(), color_frame.size(), &colors);
+    if (color_alpha[0] != 1.0f || color_alpha[1] != 0.0f) {
+        std::cerr << "Advanced refinement modified confident model pixels\n";
         return 1;
     }
     // Confirm the same model can run outside the caller's thread.
