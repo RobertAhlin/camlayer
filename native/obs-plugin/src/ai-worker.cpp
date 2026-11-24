@@ -97,8 +97,11 @@ static void run_worker(camlayer_worker *worker) noexcept
             // The inference thread owns the entire mask processing state.
             refiner.process(computed.data(), cleanup, stability, follow_speed, timestamp);
             std::lock_guard<std::mutex> lock(worker->mutex);
-            // Drop old results if a newer frame arrived during inference.
-            if (!worker->pending && !worker->stop && epoch == worker->reset_epoch) {
+            // Publish each completed mask even when a newer frame is queued.
+            // The one-slot queue remains bounded; skipping all results under
+            // heavy load would freeze the visible silhouette indefinitely.
+            // Only discard results from a reset/previous camera generation.
+            if (!worker->stop && epoch == worker->reset_epoch) {
                 worker->result = computed;
                 worker->completed_timestamp = timestamp;
                 worker->has_result = true;
