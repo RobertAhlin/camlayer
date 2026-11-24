@@ -10,6 +10,7 @@
 #include <cstring>
 #include <mutex>
 #include <new>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -66,7 +67,15 @@ static void run_worker(camlayer_worker *worker) noexcept
     }
     std::vector<uint8_t> local(kPackedBytes);
     std::array<float, kMaskPixels> computed{};
-    camlayer::MaskRefiner refiner;
+    // Keep the large temporal mask buffers off the small Windows thread stack.
+    std::unique_ptr<camlayer::MaskRefiner> refiner(
+        new (std::nothrow) camlayer::MaskRefiner());
+    if (!refiner) {
+        camlayer_ai_close(session);
+        std::lock_guard<std::mutex> lock(worker->mutex);
+        worker->status = CAMLAYER_WORKER_FAILED;
+        return;
+    }
     uint64_t applied_epoch = 0;
     for (;;) {
         uint64_t timestamp = 0;
@@ -91,11 +100,11 @@ static void run_worker(camlayer_worker *worker) noexcept
             computed.data(), computed.size());
         if (ok) {
             if (epoch != applied_epoch) {
-                refiner.reset();
+                refiner->reset();
                 applied_epoch = epoch;
             }
             // The inference thread owns the entire mask processing state.
-            refiner.process(computed.data(), cleanup, stability, follow_speed, timestamp);
+            refiner->process(computed.data(), cleanup, stability, follow_speed, timestamp);
             std::lock_guard<std::mutex> lock(worker->mutex);
             // Publish each completed mask even when a newer frame is queued.
             // The one-slot queue remains bounded; skipping all results under
