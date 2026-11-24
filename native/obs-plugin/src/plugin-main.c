@@ -23,12 +23,13 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_SOFTNESS "edge_softness"
 #define SETTING_CLEANUP "edge_cleanup"
 #define SETTING_STABILITY "edge_stability"
+#define SETTING_FOLLOW_SPEED "edge_follow_speed"
 #define SETTING_DIAGNOSTIC "diagnostic_alpha"
 #define SETTING_AI_ENGINE "ai_engine"
 #define SETTING_RUNTIME_TEST "enable_runtime_test"
 #define SETTING_LIVE_AI "enable_live_ai"
 #define CAMLAYER_MASK_SIDE 256
-#define CAMLAYER_CAPTURE_NS 100000000ULL
+/* Capture rate follows the control: 10 to 30 requested frames per second. */
 
 /* MediaPipe provides experimental live inference; RVM remains unavailable. */
 enum camlayer_ai_engine {
@@ -49,6 +50,7 @@ struct camlayer_filter {
     double softness;
     double cleanup;
     double stability;
+    double follow_speed;
     bool diagnostic;
     enum camlayer_ai_engine engine;
     camlayer_ai_session *ai;
@@ -65,6 +67,7 @@ struct camlayer_filter {
     bool staging_ready;
     bool mask_ready;
     uint64_t last_capture;
+    uint64_t staged_timestamp;
     uint32_t captured_width;
     uint32_t captured_height;
     float result_mask[CAMLAYER_MASK_SIDE * CAMLAYER_MASK_SIDE];
@@ -87,8 +90,10 @@ static void camlayer_update(void *data, obs_data_t *settings)
     filter->softness = obs_data_get_double(settings, SETTING_SOFTNESS);
     filter->cleanup = obs_data_get_double(settings, SETTING_CLEANUP);
     filter->stability = obs_data_get_double(settings, SETTING_STABILITY);
+    filter->follow_speed = obs_data_get_double(settings, SETTING_FOLLOW_SPEED);
     camlayer_worker_set_refinement(filter->worker, (float)filter->cleanup,
-                                     (float)filter->stability);
+                                   (float)filter->stability,
+                                   (float)filter->follow_speed);
     filter->diagnostic = obs_data_get_bool(settings, SETTING_DIAGNOSTIC);
     const enum camlayer_ai_engine selected =
         (enum camlayer_ai_engine)obs_data_get_int(settings, SETTING_AI_ENGINE);
@@ -124,7 +129,8 @@ static void camlayer_update(void *data, obs_data_t *settings)
         if (filter->worker)
             camlayer_worker_set_refinement(filter->worker,
                                            (float)filter->cleanup,
-                                           (float)filter->stability);
+                                           (float)filter->stability,
+                                           (float)filter->follow_speed);
         bfree(model_path);
     }
     if (wanted_test && next_engine == CAMLAYER_AI_MEDIAPIPE && !filter->ai) {
@@ -204,6 +210,7 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_double(settings, SETTING_SOFTNESS, 0.0);
     obs_data_set_default_double(settings, SETTING_CLEANUP, 0.0);
     obs_data_set_default_double(settings, SETTING_STABILITY, 1.0);
+    obs_data_set_default_double(settings, SETTING_FOLLOW_SPEED, 1.0);
     obs_data_set_default_bool(settings, SETTING_DIAGNOSTIC, false);
     obs_data_set_default_int(settings, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
     obs_data_set_default_bool(settings, SETTING_RUNTIME_TEST, false);
@@ -239,6 +246,8 @@ static obs_properties_t *camlayer_properties(void *unused)
                                     obs_module_text("CamLayer.Cleanup"), 0.0, 1.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_STABILITY,
                                     obs_module_text("CamLayer.Stability"), 0.0, 2.0, 0.05);
+    obs_properties_add_float_slider(props, SETTING_FOLLOW_SPEED,
+                                    obs_module_text("CamLayer.FollowSpeed"), 0.0, 2.0, 0.05);
     obs_properties_add_text(props, "bootstrap_info",
                             obs_module_text("CamLayer.BootstrapNotice"),
                             OBS_TEXT_INFO);
@@ -263,6 +272,7 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
     if (!width || !height) {
         filter->mask_ready = false;
         filter->staging_ready = false;
+        filter->staged_timestamp = 0;
         camlayer_worker_reset_refinement(filter->worker);
         return;
     }
@@ -271,6 +281,7 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
         filter->captured_height = height;
         filter->staging_ready = false;
         filter->mask_ready = false;
+        filter->staged_timestamp = 0;
         camlayer_worker_reset_refinement(filter->worker);
     }
     if (!filter->capture)
@@ -282,7 +293,12 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
         return;
 
     const uint64_t now = os_gettime_ns();
-    if (now - filter->last_capture < CAMLAYER_CAPTURE_NS)
+    /* Follow speed 0 -> 10 Hz, 1 -> 20 Hz, 2 -> 30 Hz.
+     * Actual mask FPS may remain below this rate on slower CPUs.
+     */
+    const double follow = fmax(0.0, fmin(2.0, filter->follow_speed));
+    const uint64_t capture_interval = (uint64_t)(100000000.0 / (1.0 + follow));
+    if (now - filter->last_capture < capture_interval)
         return;
     filter->last_capture = now;
 
@@ -291,7 +307,8 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
         uint32_t stride = 0;
         if (gs_stagesurface_map(filter->staging, &pixels, &stride)) {
             camlayer_worker_submit(filter->worker, pixels, CAMLAYER_MASK_SIDE,
-                                    CAMLAYER_MASK_SIDE, stride, now);
+                                    CAMLAYER_MASK_SIDE, stride,
+                                    filter->staged_timestamp);
             gs_stagesurface_unmap(filter->staging);
         }
         filter->staging_ready = false;
@@ -311,6 +328,7 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
         if (texture) {
             gs_stage_texture(filter->staging, texture);
             filter->staging_ready = true;
+            filter->staged_timestamp = now;
         }
     }
     gs_blend_state_pop();
