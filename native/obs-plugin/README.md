@@ -61,6 +61,22 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## Edge follow speed and capture responsiveness (experimental)
+
+User testing showed that **Edge Stability around 1.50 reduces flicker**, but moving the head leaves a similarly delayed silhouette at all stability settings. The MediaPipe prototype previously sampled the camera at only ~10 frames/second, a separate source of latency from temporal smoothing.
+
+The native filter now exposes **Edge follow speed (0–2)**, independent of Edge Stability. Higher settings reduce the historical weight specifically where mask pixels change and request more frequent 256x256 camera samples:
+
+| Edge follow speed | Target camera-sample rate |
+| --- | --- |
+| 0.00 | 10 frames/s |
+| 1.00 (default) | 20 frames/s |
+| 2.00 | 30 frames/s |
+
+Actual AI-mask output can be slower because GPU readback, CPU inference and OBS scheduling also take time. Increasing capture frequency may increase CPU/GPU cost. This setting does not automatically predict motion or compensate for the age of a completed mask. A bounded worker queue keeps the most recent pending image while continuing to publish successful completed masks under load rather than starving the renderer. The staged image timestamp now reflects capture time, not the later readback time.
+
+**Suggested difficult-lighting baseline:** threshold 0.50, softness 0.44, cleanup 0.50, stability 1.50, follow speed 1.00. Test speed 1.50 and 2.00 while turning the head; if CPU load or flicker increases, step back. Verify Windows CI and OBS on-device before claiming any latency improvement. RVM remains separately planned, not implemented.
+
 ## Working cleanup and stability controls (first refinement pass)
 
 The native pipeline now implements **Edge Cleanup** and **Edge Stability** in the inference worker rather than leaving them as placeholder sliders. These controls operate on each filter instance's own mask state.
