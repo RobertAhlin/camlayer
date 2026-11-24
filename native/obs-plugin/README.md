@@ -61,6 +61,16 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## Advanced color-aware edge refinement (experimental, opt-in)
+
+The OBS effect filter now includes **Use advanced settings** below the normal controls. When unchecked (the default), the advanced controls are hidden and the existing MediaPipe pipeline is unchanged. Checking it reveals a **Color-aware edge refinement** group with its own separate **Enable color-aware edge refinement** checkbox, off by default.
+
+The advanced controls include native OBS color selectors and independent color tolerances (0–100%) for **background, hair, skin and clothing**, plus overall correction strength (0–100%). The reference colors are stored as per-filter OBS settings, allowing different external and internal camera profiles. This first implementation uses OBS's native color dialog; a true click-on-the-live-image eyedropper is *not implemented*. Color references need to be selected or entered through the dialog.
+
+The correction runs on the existing MediaPipe inference worker, after confidence thresholding, signed softness and alpha feathering. It compares a pixel's camera RGB with the reference colors using a normalized RGB distance, and adjusts alpha only at already uncertain, partially transparent edges. If foreground and background colors are equally plausible, it makes **no adjustment**. Confidently opaque and transparent pixels remain untouched. This conservative design is **not a chroma key** and cannot separate two genuinely indistinguishable colors or reconstruct missing hair details.
+
+The advanced UI and C-based color-processing module are intended to be shared with the future RVM engine once its recurrent inference backend exists. The Windows smoke test includes checks for disabled behavior, foreground/background evidence, ambiguous colors, and confident pixels. **New CI and real OBS visual verification are still required** before recommending enabling the feature on a working production OBS scene.
+
 ## True alpha feathering after signed edge adjustment (experimental)
 
 Testing with the Sandberg external webcam revealed that the initial signed `Edge Softness` implementation mainly **moved the silhouette**. It did not create a visibly smooth opacity transition like a feather control.
