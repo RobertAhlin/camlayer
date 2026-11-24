@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 int main(int argc, char **argv)
@@ -43,57 +44,57 @@ int main(int argc, char **argv)
         }
     }
     // Regression test on synthetic masks, separate from model quality.
-    camlayer::MaskRefiner refiner;
+    auto refiner = std::make_unique<camlayer::MaskRefiner>();
     std::vector<float> synthetic(camlayer::kPixels, 0.0f);
     const int center = 128 * 256 + 128;
     synthetic[center] = 1.0f;
-    refiner.process(synthetic.data(), 0.0f, 0.0f, 1.0f, 1000000000ULL);
+    refiner->process(synthetic.data(), 0.0f, 0.0f, 1.0f, 1000000000ULL);
     if (synthetic[center] != 1.0f || synthetic[center - 1] != 0.0f) {
         std::cerr << "Disabled controls changed the mask\n";
         return 1;
     }
-    refiner.reset();
-    refiner.process(synthetic.data(), 1.0f, 0.0f, 1.0f, 1100000000ULL);
+    refiner->reset();
+    refiner->process(synthetic.data(), 1.0f, 0.0f, 1.0f, 1100000000ULL);
     if (!(synthetic[center] < 1.0f)) {
         std::cerr << "Cleanup did not reduce isolated alpha\n";
         return 1;
     }
-    refiner.reset();
+    refiner->reset();
     std::fill(synthetic.begin(), synthetic.end(), 0.0f);
     synthetic[center] = 1.0f;
-    refiner.process(synthetic.data(), 0.0f, 1.0f, 1.0f, 1200000000ULL);
+    refiner->process(synthetic.data(), 0.0f, 1.0f, 1.0f, 1200000000ULL);
     synthetic[center] = 0.95f;
-    refiner.process(synthetic.data(), 0.0f, 1.0f, 1.0f, 1300000000ULL);
+    refiner->process(synthetic.data(), 0.0f, 1.0f, 1.0f, 1300000000ULL);
     if (!(synthetic[center] > 0.95f && synthetic[center] < 1.0f)) {
         std::cerr << "Stability failed to smooth small changes\n";
         return 1;
     }
     synthetic[center] = 0.0f;
-    refiner.process(synthetic.data(), 0.0f, 1.0f, 1.0f, 1400000000ULL);
+    refiner->process(synthetic.data(), 0.0f, 1.0f, 1.0f, 1400000000ULL);
     if (!(synthetic[center] < 0.1f)) {
         std::cerr << "Motion did not release old silhouette\n";
         return 1;
     }
     // Same stability, different follow speed: fast mode must release
     // more history after a moderate edge movement.
-    camlayer::MaskRefiner slow;
-    camlayer::MaskRefiner fast;
+    auto slow = std::make_unique<camlayer::MaskRefiner>();
+    auto fast = std::make_unique<camlayer::MaskRefiner>();
     std::vector<float> slow_mask(camlayer::kPixels, 0.0f);
     std::vector<float> fast_mask(camlayer::kPixels, 0.0f);
     slow_mask[center] = fast_mask[center] = 0.70f;
-    slow.process(slow_mask.data(), 0.0f, 1.5f, 0.0f, 2000000000ULL);
-    fast.process(fast_mask.data(), 0.0f, 1.5f, 2.0f, 2000000000ULL);
+    slow->process(slow_mask.data(), 0.0f, 1.5f, 0.0f, 2000000000ULL);
+    fast->process(fast_mask.data(), 0.0f, 1.5f, 2.0f, 2000000000ULL);
     slow_mask[center] = fast_mask[center] = 0.50f;
-    slow.process(slow_mask.data(), 0.0f, 1.5f, 0.0f, 2100000000ULL);
-    fast.process(fast_mask.data(), 0.0f, 1.5f, 2.0f, 2100000000ULL);
+    slow->process(slow_mask.data(), 0.0f, 1.5f, 0.0f, 2100000000ULL);
+    fast->process(fast_mask.data(), 0.0f, 1.5f, 2.0f, 2100000000ULL);
     if (!(fast_mask[center] < slow_mask[center])) {
         std::cerr << "Follow speed did not improve motion response\\n";
         return 1;
     }
     // Reinitializing temporal state must remove residual trails.
-    fast.reset();
+    fast->reset();
     fast_mask[center] = 0.20f;
-    fast.process(fast_mask.data(), 0.0f, 1.5f, 2.0f, 2200000000ULL);
+    fast->process(fast_mask.data(), 0.0f, 1.5f, 2.0f, 2200000000ULL);
     if (fast_mask[center] != 0.20f) {
         std::cerr << "Follow speed state reset failed\\n";
         return 1;
