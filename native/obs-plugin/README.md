@@ -61,6 +61,14 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## Signed softness parity and follow speed 0–5 (experimental)
+
+The browser `src/mask-processor.mjs` uses a signed morphological operation **after thresholding**, not only a shader smoothstep-width adjustment. Native CamLayer now uses the same overall approach on the inference worker: threshold the confidence mask with smoothstep and apply a separable min (negative softness contracts the foreground) or max (positive softness expands the foreground) filter at 256px mask resolution. Mask movement blends continuously from zero with a radius scaled to the model image size. The GPU shader now samples the finished alpha directly, without a second cutoff that would undo the effect. Edge softness may change outline geometry and should be used with care around hair and hands.
+
+**Edge Follow Speed now accepts 0–5:** the requested readback cadence is approximately 10 Hz at 0, 20 Hz at 1, 30 Hz at 2 and 60 Hz at 5, and motion gating accepts the full 0–5 range. These are only sampling targets. On a 30 FPS webcam or a CPU that cannot process every frame, pushing beyond 2 may increase work without increasing unique frames or reducing end-to-end delay. Preserve the working OBS version until the new Windows smoke test is green and test progressively. RVM remains a planned separate backend.
+
+The Windows smoke tests now check that positive softness expands a synthetic silhouette, negative softness shrinks it, and follow speed 5 is accepted by the temporal processing path. These tests cannot prove real-camera softness quality or latency.
+
 ## Edge follow speed and capture responsiveness (experimental)
 
 User testing showed that **Edge Stability around 1.50 reduces flicker**, but moving the head leaves a similarly delayed silhouette at all stability settings. The MediaPipe prototype previously sampled the camera at only ~10 frames/second, a separate source of latency from temporal smoothing.
