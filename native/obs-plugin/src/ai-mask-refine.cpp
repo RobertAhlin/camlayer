@@ -107,6 +107,55 @@ void MaskRefiner::finish_alpha(float *mask, float threshold, float softness) noe
             mask[i] = alpha_buffer[i] * (1.0f - blend) + extremum * blend;
         }
     }
+
+    // Morphology changes the silhouette position, not its edge opacity.
+    // Apply a separable Gaussian feather to produce intermediate alpha
+    // values around the boundary, as expected from an Edge Softness control.
+    // Keep the signed inward/outward displacement above, but use magnitude
+    // to control an independent feather radius and blending amount.
+    const float sigma = 0.60f + std::fabs(softness) * 1.15f;
+    const int feather_radius = std::min(8, static_cast<int>(std::ceil(sigma * 2.5f)));
+    const float feather_strength = std::min(1.0f, std::fabs(softness) * 1.7f);
+    float kernel[9] = {};
+    float weight_sum = 0.0f;
+    for (int k = 0; k <= feather_radius; ++k) {
+        const float distance = static_cast<float>(k);
+        kernel[k] = std::exp(-0.5f * distance * distance / (sigma * sigma));
+        weight_sum += k == 0 ? kernel[k] : 2.0f * kernel[k];
+    }
+    for (int k = 0; k <= feather_radius; ++k)
+        kernel[k] /= weight_sum;
+
+    // Horizontal convolution to scratch.
+    for (int y = 0; y < kSide; ++y) {
+        const int row = y * kSide;
+        for (int x = 0; x < kSide; ++x) {
+            float accum = kernel[0] * mask[row + x];
+            for (int k = 1; k <= feather_radius; ++k) {
+                const int left = std::max(0, x - k);
+                const int right = std::min(kSide - 1, x + k);
+                accum += kernel[k] * (mask[row + left] + mask[row + right]);
+            }
+            scratch[row + x] = accum;
+        }
+    }
+    // Vertical convolution. Read only scratch, blend back against the
+    // unblurred signed-morphology result to preserve a meaningful edge.
+    for (int y = 0; y < kSide; ++y) {
+        const int row = y * kSide;
+        for (int x = 0; x < kSide; ++x) {
+            float accum = kernel[0] * scratch[row + x];
+            for (int k = 1; k <= feather_radius; ++k) {
+                const int top = std::max(0, y - k);
+                const int bottom = std::min(kSide - 1, y + k);
+                accum += kernel[k] *
+                    (scratch[top * kSide + x] + scratch[bottom * kSide + x]);
+            }
+            const int i = row + x;
+            mask[i] = std::clamp(mask[i] * (1.0f - feather_strength) +
+                                 accum * feather_strength, 0.0f, 1.0f);
+        }
+    }
 }
 
 } // namespace camlayer
