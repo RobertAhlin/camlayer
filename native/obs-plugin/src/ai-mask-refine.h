@@ -15,9 +15,9 @@ struct MaskRefiner {
     uint64_t last_timestamp = 0;
 
     void reset() noexcept;
-    // cleanup: [0,1], stability: [0,2].  Both are exactly disabled at zero.
+    // cleanup: [0,1], stability: [0,2], follow_speed: [0,2].
     // Only call on the owning inference thread.
     void process(float *mask, float cleanup, float stability,
-                 uint64_t timestamp) noexcept;
+                 float follow_speed, uint64_t timestamp) noexcept;
 };
 } // namespace camlayer
