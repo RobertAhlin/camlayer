@@ -54,6 +54,14 @@ jobs:
           if ($actual -ne $expected) { throw "Model SHA256 mismatch: $actual" }
           Write-Host "Pinned native AI dependencies verified (model $actual)."
 
+          # Official RVM MobileNetV3 FP32 ONNX model (GPL-3.0 project).
+          $rvmUrl = 'https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx'
+          Invoke-WebRequest -Uri $rvmUrl -OutFile 'deps/rvm_mobilenetv3_fp32.onnx'
+          $rvmFile = Get-Item 'deps/rvm_mobilenetv3_fp32.onnx'
+          if ($rvmFile.Length -lt 1000000) { throw 'RVM download unexpectedly small.' }
+          $rvmHash = (Get-FileHash -Algorithm SHA256 $rvmFile.FullName).Hash.ToLowerInvariant()
+          Write-Host "Official RVM FP32 model downloaded; SHA256: $rvmHash"
+
       - name: Adapt official template for CamLayer
         shell: pwsh
         run: |
@@ -63,18 +71,21 @@ jobs:
           Copy-Item 'camlayer/native/obs-plugin/src/ai-engine.h' 'obs-template/src/ai-engine.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-worker.cpp' 'obs-template/src/ai-worker.cpp' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-worker.h' 'obs-template/src/ai-worker.h' -Force
+          Copy-Item 'camlayer/native/obs-plugin/src/rvm-engine.cpp' 'obs-template/src/rvm-engine.cpp' -Force
+          Copy-Item 'camlayer/native/obs-plugin/src/rvm-engine.h' 'obs-template/src/rvm-engine.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-mask-refine.h' 'obs-template/src/ai-mask-refine.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-mask-refine.cpp' 'obs-template/src/ai-mask-refine.cpp' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-color-refine.cpp' 'obs-template/src/ai-color-refine.cpp' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-color-refine.h' 'obs-template/src/ai-color-refine.h' -Force
           New-Item -ItemType Directory -Force -Path 'obs-template/data/models' | Out-Null
           Copy-Item 'deps/selfie_segmentation.onnx' 'obs-template/data/models/selfie_segmentation.onnx' -Force
+          Copy-Item 'deps/rvm_mobilenetv3_fp32.onnx' 'obs-template/data/models/rvm_mobilenetv3_fp32.onnx' -Force
           New-Item -ItemType Directory -Force -Path 'obs-template/dependencies/onnxruntime/include' | Out-Null
           Copy-Item 'deps/ort/build/native/include/*.h' 'obs-template/dependencies/onnxruntime/include/' -Force
           Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.lib' 'obs-template/dependencies/onnxruntime/onnxruntime.lib' -Force
           $cmake = 'obs-template/CMakeLists.txt'
           Add-Content $cmake @'
-          target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ai-engine.cpp src/ai-worker.cpp src/ai-mask-refine.cpp src/ai-color-refine.cpp)
+          target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ai-engine.cpp src/ai-worker.cpp src/ai-mask-refine.cpp src/ai-color-refine.cpp src/rvm-engine.cpp)
           target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
           if(MSVC)
             target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/EHsc>)
@@ -114,7 +125,9 @@ jobs:
           Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.dll' "$dest/onnxruntime.dll" -Force
           $model = 'obs-template/release/RelWithDebInfo/camlayer-obs/data/models/selfie_segmentation.onnx'
           if (-not (Test-Path $model)) { throw 'Model is missing from artifact.' }
-          Write-Host 'Bundled ONNX Runtime DLL and pinned MediaPipe model.'
+          $rvmModel = 'obs-template/release/RelWithDebInfo/camlayer-obs/data/models/rvm_mobilenetv3_fp32.onnx'
+          if (-not (Test-Path $rvmModel)) { throw 'RVM model missing from artifact.' }
+          Write-Host 'Bundled ONNX Runtime DLL, MediaPipe and RVM FP32 models.'
 
       - name: Smoke-test OBS-linked ONNX engine with synthetic BGRA frame
         shell: pwsh
@@ -124,12 +137,25 @@ jobs:
           $vsPath = & $vswhere -latest -products '*' -property installationPath
           if (-not $vsPath) { throw 'Visual Studio build tools unavailable.' }
           $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
-          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /I`"deps/ort/build/native/include`" camlayer/native/obs-plugin/src/ai-engine.cpp camlayer/native/obs-plugin/src/ai-worker.cpp camlayer/native/obs-plugin/src/ai-mask-refine.cpp camlayer/native/obs-plugin/src/ai-color-refine.cpp camlayer/native/obs-plugin/tests/native-engine-smoke.cpp /link /LIBPATH:`"deps/ort/runtimes/win-x64/native`" onnxruntime.lib /OUT:camlayer-native-smoke.exe"
+          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /I`"deps/ort/build/native/include`" camlayer/native/obs-plugin/src/ai-engine.cpp camlayer/native/obs-plugin/src/ai-worker.cpp camlayer/native/obs-plugin/src/ai-mask-refine.cpp camlayer/native/obs-plugin/src/ai-color-refine.cpp camlayer/native/obs-plugin/src/rvm-engine.cpp camlayer/native/obs-plugin/tests/native-engine-smoke.cpp /link /LIBPATH:`"deps/ort/runtimes/win-x64/native`" onnxruntime.lib /OUT:camlayer-native-smoke.exe"
           cmd /c $cmd
           if ($LASTEXITCODE -ne 0) { throw "Smoke test compilation failed: $LASTEXITCODE" }
           Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.dll' './onnxruntime.dll' -Force
           & ./camlayer-native-smoke.exe 'deps/selfie_segmentation.onnx'
           if ($LASTEXITCODE -ne 0) { throw "ONNX engine smoke test failed: $LASTEXITCODE" }
+
+      - name: Smoke-test RVM model and recurrent state with synthetic frames
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsPath = & $vswhere -latest -products '*' -property installationPath
+          $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /I`"deps/ort/build/native/include`" camlayer/native/obs-plugin/src/rvm-engine.cpp camlayer/native/obs-plugin/tests/rvm-engine-smoke.cpp /link /LIBPATH:`"deps/ort/runtimes/win-x64/native`" onnxruntime.lib /OUT:camlayer-rvm-smoke.exe"
+          cmd /c $cmd
+          if ($LASTEXITCODE -ne 0) { throw "RVM smoke build failed: $LASTEXITCODE" }
+          & ./camlayer-rvm-smoke.exe 'deps/rvm_mobilenetv3_fp32.onnx'
+          if ($LASTEXITCODE -ne 0) { throw "RVM recurrent inference test failed: $LASTEXITCODE" }
 
       - name: Show built files
         if: success()
@@ -148,7 +174,8 @@ jobs:
             "$root/data/ellipse_alpha.effect",
             "$root/data/locale/en-US.ini",
             "$root/bin/64bit/onnxruntime.dll",
-            "$root/data/models/selfie_segmentation.onnx"
+            "$root/data/models/selfie_segmentation.onnx",
+            "$root/data/models/rvm_mobilenetv3_fp32.onnx"
           )
           foreach ($path in $required) {
             if (-not (Test-Path $path -PathType Leaf)) {
