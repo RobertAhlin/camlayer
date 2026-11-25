@@ -34,26 +34,51 @@ extern "C" void camlayer_color_refine(
     const float strength = std::clamp(config->strength, 0.0f, 100.0f) * 0.01f;
     if (strength <= 0.0f)
         return;
-    for (size_t i = 0; i < kPixels; ++i) {
-        const float current = alpha[i];
-        // Keep the inside of the person and the distant background
-        // controlled by the segmentation model, not by similar colors.
-        if (!(current > 0.01f && current < 0.99f))
-            continue;
-        const uint8_t *pixel = bgra + i * 4;
-        const float bg = match_color(pixel, config->rgb[CAMLAYER_COLOR_BACKGROUND],
-                                      config->tolerance[CAMLAYER_COLOR_BACKGROUND]);
-        float fg = 0.0f;
-        for (int role = CAMLAYER_COLOR_HAIR; role < CAMLAYER_COLOR_COUNT; ++role)
-            fg = std::max(fg, match_color(pixel, config->rgb[role],
-                                           config->tolerance[role]));
-        // If background and person reference colors are equally plausible,
-        // abstain rather than destroying hair or clothing detail.
-        const float evidence = fg - bg;
-        if (std::fabs(evidence) < 0.05f)
-            continue;
-        const float boundary_weight = 1.0f - std::fabs(current - 0.5f) * 2.0f;
-        const float delta = evidence * boundary_weight * strength * 0.30f;
-        alpha[i] = std::clamp(current + delta, 0.0f, 1.0f);
+    // Evaluate only a thin band around the geometric AI edge, including
+    // currently opaque/transparent pixels adjacent to a different class.
+    // This permits removing green screen bleed where the matte is locally
+    // overconfident, without acting as a full-frame chroma key.
+    constexpr int kSide = 256;
+    constexpr int kRadius = 2;
+    for (int y = 0; y < kSide; ++y) {
+        for (int x = 0; x < kSide; ++x) {
+            const size_t i = size_t(y) * kSide + x;
+            const float current = std::clamp(alpha[i], 0.0f, 1.0f);
+            float minimum = current;
+            float maximum = current;
+            for (int dy = -kRadius; dy <= kRadius; ++dy) {
+                const int yy = std::clamp(y + dy, 0, kSide - 1);
+                for (int dx = -kRadius; dx <= kRadius; ++dx) {
+                    const int xx = std::clamp(x + dx, 0, kSide - 1);
+                    const float sample = alpha[size_t(yy) * kSide + xx];
+                    minimum = std::min(minimum, sample);
+                    maximum = std::max(maximum, sample);
+                }
+            }
+            // A nearby boundary is required even for a 0 or 1 alpha pixel.
+            // Skip flat foreground/background surfaces entirely.
+            if (maximum - minimum < 0.12f)
+                continue;
+            const uint8_t *pixel = bgra + i * 4;
+            const float bg = match_color(pixel,
+                config->rgb[CAMLAYER_COLOR_BACKGROUND],
+                config->tolerance[CAMLAYER_COLOR_BACKGROUND]);
+            float fg = 0.0f;
+            for (int role = CAMLAYER_COLOR_HAIR; role < CAMLAYER_COLOR_COUNT; ++role)
+                fg = std::max(fg, match_color(pixel, config->rgb[role],
+                                               config->tolerance[role]));
+
+            const float evidence = fg - bg;
+            if (std::fabs(evidence) < 0.12f)
+                continue; // Foreground/background color ambiguity: abstain.
+
+            // Stronger than the original tiny alpha offset but remains
+            // restricted to the edge zone and scaled by user-selected strength.
+            const float confidence = std::clamp(
+                (std::fabs(evidence) - 0.12f) / 0.88f, 0.0f, 1.0f);
+            const float correction = strength * confidence * 0.82f;
+            const float target = evidence > 0.0f ? 1.0f : 0.0f;
+            alpha[i] = current + (target - current) * correction;
+        }
     }
 }
