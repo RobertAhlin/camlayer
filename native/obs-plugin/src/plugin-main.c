@@ -61,6 +61,7 @@ struct camlayer_filter {
     bool runtime_test;
     bool live_ai;
     camlayer_worker *worker;
+    enum camlayer_ai_engine worker_engine;
     gs_texrender_t *capture;
     gs_stagesurf_t *staging;
     gs_texture_t *mask_texture;
@@ -109,7 +110,7 @@ static void camlayer_update(void *data, obs_data_t *settings)
     const enum camlayer_ai_engine next_engine =
         selected == CAMLAYER_AI_RVM ? CAMLAYER_AI_RVM : CAMLAYER_AI_MEDIAPIPE;
     if (filter->engine != next_engine) {
-        blog(LOG_INFO, "[CamLayer] Selected future AI backend: %s (not active)",
+        blog(LOG_INFO, "[CamLayer] AI engine selection: %s",
              camlayer_engine_name(next_engine));
     }
     filter->engine = next_engine;
@@ -120,7 +121,7 @@ static void camlayer_update(void *data, obs_data_t *settings)
     }
     filter->runtime_test = wanted_test;
     const bool live_ai = obs_data_get_bool(settings, SETTING_LIVE_AI);
-    if (filter->worker && (!live_ai || next_engine != CAMLAYER_AI_MEDIAPIPE ||
+    if (filter->worker && (!live_ai || next_engine != filter->worker_engine ||
                            filter->live_ai != live_ai)) {
         camlayer_worker_destroy(filter->worker);
         filter->worker = NULL;
@@ -128,11 +129,18 @@ static void camlayer_update(void *data, obs_data_t *settings)
         filter->staging_ready = false;
     }
     filter->live_ai = live_ai;
-    if (live_ai && next_engine == CAMLAYER_AI_MEDIAPIPE && !filter->worker) {
-        char *model_path = obs_module_file("models/selfie_segmentation.onnx");
-        filter->worker = camlayer_worker_create(CAMLAYER_BACKEND_MEDIAPIPE, model_path);
-        if (filter->worker)
-            blog(LOG_INFO, "[CamLayer] Live MediaPipe inference worker started (experimental)");
+    if (live_ai && !filter->worker) {
+        const bool use_rvm = next_engine == CAMLAYER_AI_RVM;
+        char *model_path = obs_module_file(use_rvm
+            ? "models/rvm_mobilenetv3_fp32.onnx"
+            : "models/selfie_segmentation.onnx");
+        filter->worker = camlayer_worker_create(use_rvm
+            ? CAMLAYER_BACKEND_RVM : CAMLAYER_BACKEND_MEDIAPIPE, model_path);
+        if (filter->worker) {
+            filter->worker_engine = next_engine;
+            blog(LOG_INFO, "[CamLayer] Live %s inference worker starting",
+                 camlayer_engine_name(next_engine));
+        }
         else
             blog(LOG_WARNING, "[CamLayer] Could not create live inference worker");
         if (filter->worker)
@@ -407,7 +415,6 @@ static void camlayer_render(void *data, gs_effect_t *unused)
      */
     gs_effect_set_bool(filter->ellipse_parameter, filter->diagnostic);
     const bool apply_mask = filter->live_ai && !filter->diagnostic &&
-                            filter->engine == CAMLAYER_AI_MEDIAPIPE &&
                             filter->mask_ready && filter->mask_texture;
     if (filter->mask_enabled_parameter)
         gs_effect_set_bool(filter->mask_enabled_parameter, apply_mask);
