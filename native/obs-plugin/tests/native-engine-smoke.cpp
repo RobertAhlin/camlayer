@@ -131,6 +131,29 @@ int main(int argc, char **argv)
         std::cerr << "Signed softness boundary behavior failed\n";
         return 1;
     }
+    // Regression: small slider steps near integer morphology radii
+    // must never trigger a sudden edge jump. Test both signs and
+    // crossings at radii 1 and 2 (softness = radius / 2.4).
+    std::vector<float> near_before(camlayer::kPixels);
+    std::vector<float> near_after(camlayer::kPixels);
+    for (float sign : {-1.0f, 1.0f}) {
+        for (float radius : {1.0f, 2.0f, 3.0f}) {
+            near_before = base;
+            near_after = base;
+            const float boundary = sign * radius / 2.4f;
+            const float offset = sign * 0.001f;
+            feather->finish_alpha(near_before.data(), 0.5f, boundary - offset);
+            feather->finish_alpha(near_after.data(), 0.5f, boundary + offset);
+            float largest_step = 0.0f;
+            for (size_t i = 0; i < near_before.size(); ++i)
+                largest_step = std::max(largest_step,
+                    std::fabs(near_before[i] - near_after[i]));
+            if (!(largest_step < 0.03f)) {
+                std::cerr << "Edge Softness jumps at an integer radius\n";
+                return 1;
+            }
+        }
+    }
     auto max_speed = std::make_unique<camlayer::MaskRefiner>();
     std::vector<float> max_mask(camlayer::kPixels, 0.0f);
     max_mask[center] = 0.70f;
