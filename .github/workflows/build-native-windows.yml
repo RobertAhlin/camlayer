@@ -60,7 +60,9 @@ jobs:
           $rvmFile = Get-Item 'deps/rvm_mobilenetv3_fp32.onnx'
           if ($rvmFile.Length -lt 1000000) { throw 'RVM download unexpectedly small.' }
           $rvmHash = (Get-FileHash -Algorithm SHA256 $rvmFile.FullName).Hash.ToLowerInvariant()
-          Write-Host "Official RVM FP32 model downloaded; SHA256: $rvmHash"
+          $rvmExpected = '88d4531297118f595bf2fd60f6f566aec2e559393802d1f436c380f0cbbd2828'
+          if ($rvmHash -ne $rvmExpected) { throw "RVM model SHA256 mismatch: $rvmHash" }
+          Write-Host "Official RVM FP32 model verified; SHA256: $rvmHash"
 
       - name: Adapt official template for CamLayer
         shell: pwsh
