@@ -61,6 +61,16 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## Higher quality edges and stronger advanced controls (November 2026)
+
+Early on-device Logitech webcam testing against a greenscreen exposed two problems: the 256x256 MediaPipe matte becomes visibly stair-stepped when shown at camera resolution, and the first color-aware correction was nearly invisible because it affected only semi-transparent pixels with a very small adjustment.
+
+The filter now has a separate **Edge feather width (GPU)** slider, 0 to 3, with default 1.5. This applies an adjustable 9-tap spatial reconstruction filter while rendering the 256x256 alpha texture at the camera's actual output resolution. The existing signed **Edge softness / feather** still moves and feathers the mask on the inference worker; the GPU control reduces blockiness independently, even when signed softness is 0. Higher GPU feather width can blur hair details and adds graphics workload. It smooths pixelation but **does not generate new hair detail**, since native MediaPipe inference remains limited to 256x256.
+
+The advanced color refinement now evaluates a narrow two-pixel band around actual segmentation boundaries, rather than requiring the current alpha to be already between 0.01 and 0.99. It can correct overconfident edge pixels when the sampled color strongly matches the background or a foreground reference. Color evidence must still exceed an ambiguity threshold, and deep interior/exterior pixels are unchanged. Disabled advanced mode remains a no-op. The source is copied into a reusable per-thread buffer before editing to ensure results are independent of iteration order. Existing user settings are preserved.
+
+**Testing:** Install only after a green GitHub Actions build. First disable color refinement, set signed softness near 0, then compare GPU feather width 0, 1.5, and 3 against a contrasting background. Next enable both **Use advanced settings** and the *separate* **Enable color-aware edge refinement** checkbox, choose the actual greenscreen color, set foreground tolerances conservatively (15–30%, not 97%), and compare correction strength 0 versus 75–100. The OBS native color dialog is not a video eyedropper. Strong spill of a green background into the original RGB hair pixels requires a separate color despill/decontamination algorithm; alpha refinement alone cannot remove it.
+
 ## Advanced color-aware edge refinement (experimental, opt-in)
 
 The OBS effect filter now includes **Use advanced settings** below the normal controls. When unchecked (the default), the advanced controls are hidden and the existing MediaPipe pipeline is unchanged. Checking it reveals a **Color-aware edge refinement** group with its own separate **Enable color-aware edge refinement** checkbox, off by default.
