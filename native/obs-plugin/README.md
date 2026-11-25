@@ -69,6 +69,18 @@ The processor now interpolates between the result at the lower and upper adjacen
 
 Synthetic regression tests compare neighboring softness settings around all initial integer-radius crossings for both inward and outward directions and reject large discontinuities. **CI and real OBS feel require verification before installing**. RVM remains a separate planned backend.
 
+## RVM experimental backend (November 2026)
+
+The optional **Use advanced settings** / color-guided refinement UI has been removed after real-camera testing showed no consistent benefit and sometimes introduced a green halo. The standard mask threshold, signed softness/feather, GPU feather width, guided edge detail, cleanup, stability and follow-speed controls remain available. The unused color refinement implementation is disconnected from the runtime; it is not part of the active image pipeline.
+
+CamLayer now contains an experimental **Robust Video Matting (RVM) MobileNetV3 FP32 ONNX** backend. The AI engine dropdown selects MediaPipe or RVM. The normal **Enable live AI background removal (experimental)** option creates a worker for the selected model. Switching engines tears down the old worker and its model state before starting the new worker.
+
+The RVM worker uses the official model's six ONNX inputs (`src`, `r1i`, `r2i`, `r3i`, `r4i`, `downsample_ratio`) and its alpha output `pha`, retaining all four recurrent output tensors across frames. The recurrent state is reset after a camera-source reset or resolution change. Both engines currently receive a **256x256 BGRA capture** and share the existing mask reconstruction shader. This first RVM integration is for compatibility and quality comparison, **not yet a high-resolution RVM pipeline**. The model was designed to support high-resolution processing, which requires reworking the CamLayer capture and alpha-mask texture dimensions.
+
+The Windows workflow downloads the official RVM MobileNetV3 FP32 ONNX release model and packages it with the plugin. The RVM smoke test must complete two consecutive inference frames and a third frame after state reset; the MediaPipe smoke test remains a separate requirement. CPU performance and final cutout quality are **not yet verified on the user's Windows OBS machine**. Do not install if the latest CI build is red. The build currently records the official RVM file's SHA256; a later improvement should lock it to a reviewed digest in CI.
+
+RVM upstream: https://github.com/PeterL1n/RobustVideoMatting (GPL-3.0). Official ONNX documentation: https://github.com/PeterL1n/RobustVideoMatting/blob/master/documentation/inference.md.
+
 ## Edge detail guided upscaling (experimental)
 
 The 256x256 native MediaPipe model is **not capable of producing a genuine higher-resolution segmentation mask** on its own. A broad Gaussian feather can conceal stair steps, but creates an oversized halo around hair and shoulders. The filter now includes a separate **Edge detail (guided upscaling)** control from 0 to 2. It is **off by default** to preserve the previously verified visual result until the new shader has been tested.
