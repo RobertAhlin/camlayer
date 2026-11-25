@@ -22,6 +22,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_THRESHOLD "mask_threshold"
 #define SETTING_SOFTNESS "edge_softness"
 #define SETTING_FEATHER_WIDTH "edge_feather_width"
+#define SETTING_EDGE_DETAIL "edge_detail"
 #define SETTING_CLEANUP "edge_cleanup"
 #define SETTING_STABILITY "edge_stability"
 #define SETTING_FOLLOW_SPEED "edge_follow_speed"
@@ -62,6 +63,7 @@ struct camlayer_filter {
     double threshold;
     double softness;
     double feather_width;
+    double edge_detail;
     double cleanup;
     double stability;
     double follow_speed;
@@ -80,6 +82,7 @@ struct camlayer_filter {
     gs_eparam_t *threshold_parameter;
     gs_eparam_t *softness_parameter;
     gs_eparam_t *feather_parameter;
+    gs_eparam_t *detail_parameter;
     bool staging_ready;
     bool mask_ready;
     uint64_t last_capture;
@@ -105,6 +108,7 @@ static void camlayer_update(void *data, obs_data_t *settings)
     filter->threshold = obs_data_get_double(settings, SETTING_THRESHOLD);
     filter->softness = obs_data_get_double(settings, SETTING_SOFTNESS);
     filter->feather_width = obs_data_get_double(settings, SETTING_FEATHER_WIDTH);
+    filter->edge_detail = obs_data_get_double(settings, SETTING_EDGE_DETAIL);
     filter->cleanup = obs_data_get_double(settings, SETTING_CLEANUP);
     filter->stability = obs_data_get_double(settings, SETTING_STABILITY);
     filter->follow_speed = obs_data_get_double(settings, SETTING_FOLLOW_SPEED);
@@ -230,6 +234,8 @@ static void *camlayer_create(obs_data_t *settings, obs_source_t *source)
             gs_effect_get_param_by_name(filter->alpha_effect, "edge_softness");
         filter->feather_parameter =
             gs_effect_get_param_by_name(filter->alpha_effect, "edge_feather_width");
+        filter->detail_parameter =
+            gs_effect_get_param_by_name(filter->alpha_effect, "edge_detail");
     }
     obs_leave_graphics();
 
@@ -251,6 +257,7 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_double(settings, SETTING_THRESHOLD, 0.50);
     obs_data_set_default_double(settings, SETTING_SOFTNESS, 0.0);
     obs_data_set_default_double(settings, SETTING_FEATHER_WIDTH, 1.5);
+    obs_data_set_default_double(settings, SETTING_EDGE_DETAIL, 0.0);
     obs_data_set_default_double(settings, SETTING_CLEANUP, 0.0);
     obs_data_set_default_double(settings, SETTING_STABILITY, 1.0);
     obs_data_set_default_double(settings, SETTING_FOLLOW_SPEED, 1.0);
@@ -308,6 +315,9 @@ static obs_properties_t *camlayer_properties(void *data)
                                     obs_module_text("CamLayer.Softness"), -2.0, 2.0, 0.01);
     obs_properties_add_float_slider(props, SETTING_FEATHER_WIDTH,
                                     obs_module_text("CamLayer.FeatherWidth"), 0.0, 3.0, 0.05);
+    obs_properties_add_float_slider(props, SETTING_EDGE_DETAIL,
+                                    obs_module_text("CamLayer.EdgeDetail"),
+                                    0.0, 2.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_CLEANUP,
                                     obs_module_text("CamLayer.Cleanup"), 0.0, 1.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_STABILITY,
@@ -500,6 +510,8 @@ static void camlayer_render(void *data, gs_effect_t *unused)
         gs_effect_set_texture(filter->mask_parameter, filter->mask_texture);
     if (filter->feather_parameter)
         gs_effect_set_float(filter->feather_parameter, (float)filter->feather_width);
+    if (filter->detail_parameter)
+        gs_effect_set_float(filter->detail_parameter, (float)filter->edge_detail);
     obs_source_process_filter_end(filter->source, filter->alpha_effect, 0, 0);
 }
 
