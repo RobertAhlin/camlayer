@@ -1,7 +1,6 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
-#include "ai-color-refine.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -42,9 +41,6 @@ int camlayer_worker_take_mask(camlayer_worker *worker, float *dst,
 void camlayer_worker_set_refinement(camlayer_worker *worker, float threshold,
                                     float softness, float cleanup,
                                     float stability, float follow_speed);
-/* Optional foreground/background color references for uncertain edges. */
-void camlayer_worker_set_color_config(camlayer_worker *worker,
-                                      const camlayer_color_config *config);
 /* Clears temporal state after camera disconnect or geometry change. */
 void camlayer_worker_reset_refinement(camlayer_worker *worker);
 int camlayer_worker_get_status(camlayer_worker *worker);
