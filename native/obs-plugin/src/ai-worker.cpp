@@ -113,8 +113,17 @@ static void run_worker(camlayer_worker *worker) noexcept
                 applied_epoch = epoch;
             }
             // The inference thread owns the entire mask processing state.
-            refiner->process(computed.data(), cleanup, stability, follow_speed, timestamp);
-            refiner->finish_alpha(computed.data(), threshold, softness);
+            // RVM already produces a continuous alpha matte. Preserve it instead of
+            // applying MediaPipe's threshold and signed morphological feather.
+            // Optional RVM cleanup/stability remain separately adjustable.
+            if (rvm) {
+                if (cleanup > 0.0f || stability > 0.0f)
+                    refiner->process(computed.data(), cleanup, stability,
+                                     follow_speed, timestamp);
+            } else {
+                refiner->process(computed.data(), cleanup, stability, follow_speed, timestamp);
+                refiner->finish_alpha(computed.data(), threshold, softness);
+            }
             std::lock_guard<std::mutex> lock(worker->mutex);
             // Publish each completed mask even when a newer frame is queued.
             // The one-slot queue remains bounded; skipping all results under
