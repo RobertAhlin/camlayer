@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "ai-worker.h"
 #include "ai-engine.h"
+#include "rvm-engine.h"
 #include "ai-mask-refine.h"
 #include <algorithm>
 #include <array>
@@ -48,16 +49,14 @@ struct camlayer_worker {
 
 static void run_worker(camlayer_worker *worker) noexcept
 {
-    if (worker->backend != CAMLAYER_BACKEND_MEDIAPIPE) {
-        std::lock_guard<std::mutex> lock(worker->mutex);
-        worker->status = CAMLAYER_WORKER_UNAVAILABLE;
-        return; // RVM backend remains explicit and unimplemented.
-    }
-
     char error[512] = {};
-    camlayer_ai_session *session =
-        camlayer_ai_open(worker->model_path.c_str(), error, sizeof(error));
-    if (!session) {
+    camlayer_ai_session *media = nullptr;
+    camlayer_rvm_session *rvm = nullptr;
+    if (worker->backend == CAMLAYER_BACKEND_MEDIAPIPE)
+        media = camlayer_ai_open(worker->model_path.c_str(), error, sizeof(error));
+    else if (worker->backend == CAMLAYER_BACKEND_RVM)
+        rvm = camlayer_rvm_open(worker->model_path.c_str(), error, sizeof(error));
+    if (!media && !rvm) {
         std::lock_guard<std::mutex> lock(worker->mutex);
         worker->status = CAMLAYER_WORKER_FAILED;
         return;
@@ -73,7 +72,8 @@ static void run_worker(camlayer_worker *worker) noexcept
     std::unique_ptr<camlayer::MaskRefiner> refiner(
         new (std::nothrow) camlayer::MaskRefiner());
     if (!refiner) {
-        camlayer_ai_close(session);
+        camlayer_ai_close(media);
+        camlayer_rvm_close(rvm);
         std::lock_guard<std::mutex> lock(worker->mutex);
         worker->status = CAMLAYER_WORKER_FAILED;
         return;
@@ -101,12 +101,15 @@ static void run_worker(camlayer_worker *worker) noexcept
             epoch = worker->reset_epoch;
             worker->pending = false;
         }
-        const int ok = camlayer_ai_segment_bgra(
-            session, local.data(), kMaskSide, kMaskSide, kMaskSide * 4,
-            computed.data(), computed.size());
+        const int ok = media
+            ? camlayer_ai_segment_bgra(media, local.data(), kMaskSide, kMaskSide,
+                                        kMaskSide * 4, computed.data(), computed.size())
+            : camlayer_rvm_segment_bgra(rvm, local.data(), kMaskSide * 4,
+                                        computed.data(), computed.size());
         if (ok) {
             if (epoch != applied_epoch) {
                 refiner->reset();
+                if (rvm) camlayer_rvm_reset(rvm);
                 applied_epoch = epoch;
             }
             // The inference thread owns the entire mask processing state.
@@ -128,14 +131,15 @@ static void run_worker(camlayer_worker *worker) noexcept
             break;
         }
     }
-    camlayer_ai_close(session);
+    camlayer_ai_close(media);
+    camlayer_rvm_close(rvm);
 }
 
 extern "C" camlayer_worker *camlayer_worker_create(int backend, const char *model_path)
 {
     if (backend != CAMLAYER_BACKEND_MEDIAPIPE && backend != CAMLAYER_BACKEND_RVM)
         return nullptr;
-    if (backend == CAMLAYER_BACKEND_MEDIAPIPE && (!model_path || !*model_path))
+    if (!model_path || !*model_path)
         return nullptr;
     try {
         auto *worker = new camlayer_worker(backend, model_path);
