@@ -168,6 +168,9 @@ int main(int argc, char **argv)
         return 1;
     }
     colors.enabled = 1;
+    // The advanced algorithm intentionally changes real boundaries only.
+    // Introduce a neighboring opaque pixel to create an AI edge.
+    color_alpha[1] = 1.0f;
     camlayer_color_refine(color_alpha.data(), color_alpha.size(),
                           color_frame.data(), color_frame.size(), &colors);
     if (!(color_alpha[0] < 0.5f)) {
@@ -175,6 +178,7 @@ int main(int argc, char **argv)
         return 1;
     }
     std::fill(color_alpha.begin(), color_alpha.end(), 0.5f);
+    color_alpha[1] = 1.0f;
     for (size_t i = 0; i < color_frame.size(); i += 4) {
         color_frame[i] = 0x33;
         color_frame[i + 1] = 0x44;
@@ -187,6 +191,7 @@ int main(int argc, char **argv)
         return 1;
     }
     std::fill(color_alpha.begin(), color_alpha.end(), 0.5f);
+    color_alpha[1] = 1.0f;
     colors.rgb[CAMLAYER_COLOR_HAIR] = colors.rgb[CAMLAYER_COLOR_BACKGROUND];
     for (size_t i = 0; i < color_frame.size(); i += 4) {
         color_frame[i] = color_frame[i + 1] = color_frame[i + 2] = 0x88;
