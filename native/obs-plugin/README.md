@@ -61,6 +61,14 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## Continuous Edge Softness radius (November 2026)
+
+OBS testing identified visible jumps while dragging **Edge softness / feather**. The native mask processor previously used `ceil()` to snap signed dilation/erosion to integer mask-pixel radii; moving the slider past a boundary could suddenly include a whole new ring of pixels. The Gaussian feather kernel also changed its support width in steps.
+
+The processor now interpolates between the result at the lower and upper adjacent integer morphology radii, giving a continuous subpixel alpha transition as softness changes. Gaussian feathering uses fixed kernel support with smoothly changing weights. Signed inward/outward displacement, blur behavior, per-filter slider range and the separately adjustable GPU feather width remain unchanged. Extra processing can modestly increase CPU work per mask compared with the previous single-radius operation.
+
+Synthetic regression tests compare neighboring softness settings around all initial integer-radius crossings for both inward and outward directions and reject large discontinuities. **CI and real OBS feel require verification before installing**. RVM remains a separate planned backend.
+
 ## Edge detail guided upscaling (experimental)
 
 The 256x256 native MediaPipe model is **not capable of producing a genuine higher-resolution segmentation mask** on its own. A broad Gaussian feather can conceal stair steps, but creates an oversized halo around hair and shoulders. The filter now includes a separate **Edge detail (guided upscaling)** control from 0 to 2. It is **off by default** to preserve the previously verified visual result until the new shader has been tested.
