@@ -61,6 +61,16 @@ The target user's Windows computer is IT-managed and may prohibit installation, 
 5. Port and benchmark mask settings, quality presets, and stabilization.
 6. Package, document, and test with multiple camera formats and OBS versions.
 
+## Edge detail guided upscaling (experimental)
+
+The 256x256 native MediaPipe model is **not capable of producing a genuine higher-resolution segmentation mask** on its own. A broad Gaussian feather can conceal stair steps, but creates an oversized halo around hair and shoulders. The filter now includes a separate **Edge detail (guided upscaling)** control from 0 to 2. It is **off by default** to preserve the previously verified visual result until the new shader has been tested.
+
+With Edge detail enabled, the OBS GPU shader reconstructs the low-resolution mask at the output camera resolution using 3x3 neighboring alpha samples, weighted by differences in the **original full-resolution camera RGB**. Samples that cross a clear color boundary receive less weight, which can keep edges narrower than uniform feathering. Only pixels near a mask transition use the additional source RGB reads. At zero, the previous shader feather path remains unchanged.
+
+**Suggested comparison on a Logitech camera against a contrasting background:** keep threshold/cleanup/stability/follow speed constant, use signed softness 0, set GPU feather width 0.50, and compare Edge detail 0, 0.75, 1.5 and 2.0. Next compare feather 0 and 0.5 while detail 1.5. Strong detail may preserve camera noise and produce halos when foreground and background colors are similar. These are visualization heuristics, not actual RVM-quality matting. A higher-resolution model and/or a dedicated full-resolution guided matting stage remain separate future engineering tasks.
+
+The output's quality and performance must be evaluated in OBS after a successful Windows Actions build. RVM is still not integrated.
+
 ## Higher quality edges and stronger advanced controls (November 2026)
 
 Early on-device Logitech webcam testing against a greenscreen exposed two problems: the 256x256 MediaPipe matte becomes visibly stair-stepped when shown at camera resolution, and the first color-aware correction was nearly invisible because it affected only semi-transparent pixels with a very small adjustment.
