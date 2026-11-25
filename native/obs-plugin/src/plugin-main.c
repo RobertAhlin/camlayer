@@ -30,6 +30,11 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_AI_ENGINE "ai_engine"
 #define SETTING_RUNTIME_TEST "enable_runtime_test"
 #define SETTING_LIVE_AI "enable_live_ai"
+#define SETTING_RVM_BLACK "rvm_alpha_black"
+#define SETTING_RVM_WHITE "rvm_alpha_white"
+#define SETTING_RVM_CLEANUP "rvm_cleanup"
+#define SETTING_RVM_STABILITY "rvm_stability"
+#define SETTING_RVM_FOLLOW "rvm_follow_speed"
 #define CAMLAYER_MASK_SIDE 256
 /* Capture rate follows the control: 10 to 30 requested frames per second. */
 
@@ -55,6 +60,7 @@ struct camlayer_filter {
     double cleanup;
     double stability;
     double follow_speed;
+    double rvm_black, rvm_white, rvm_cleanup, rvm_stability, rvm_follow;
     bool diagnostic;
     enum camlayer_ai_engine engine;
     camlayer_ai_session *ai;
@@ -71,6 +77,7 @@ struct camlayer_filter {
     gs_eparam_t *softness_parameter;
     gs_eparam_t *feather_parameter;
     gs_eparam_t *detail_parameter;
+    gs_eparam_t *rvm_mode_parameter, *rvm_black_parameter, *rvm_white_parameter;
     bool staging_ready;
     bool mask_ready;
     uint64_t last_capture;
@@ -100,10 +107,11 @@ static void camlayer_update(void *data, obs_data_t *settings)
     filter->cleanup = obs_data_get_double(settings, SETTING_CLEANUP);
     filter->stability = obs_data_get_double(settings, SETTING_STABILITY);
     filter->follow_speed = obs_data_get_double(settings, SETTING_FOLLOW_SPEED);
-    camlayer_worker_set_refinement(filter->worker,
-                                   (float)filter->threshold, (float)filter->softness,
-                                   (float)filter->cleanup, (float)filter->stability,
-                                   (float)filter->follow_speed);
+    filter->rvm_black = obs_data_get_double(settings, SETTING_RVM_BLACK);
+    filter->rvm_white = obs_data_get_double(settings, SETTING_RVM_WHITE);
+    filter->rvm_cleanup = obs_data_get_double(settings, SETTING_RVM_CLEANUP);
+    filter->rvm_stability = obs_data_get_double(settings, SETTING_RVM_STABILITY);
+    filter->rvm_follow = obs_data_get_double(settings, SETTING_RVM_FOLLOW);
     filter->diagnostic = obs_data_get_bool(settings, SETTING_DIAGNOSTIC);
     const enum camlayer_ai_engine selected =
         (enum camlayer_ai_engine)obs_data_get_int(settings, SETTING_AI_ENGINE);
@@ -114,6 +122,13 @@ static void camlayer_update(void *data, obs_data_t *settings)
              camlayer_engine_name(next_engine));
     }
     filter->engine = next_engine;
+    if (filter->worker)
+        camlayer_worker_set_refinement(filter->worker,
+            next_engine == CAMLAYER_AI_RVM ? 0.50f : (float)filter->threshold,
+            next_engine == CAMLAYER_AI_RVM ? 0.0f : (float)filter->softness,
+            next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_cleanup : (float)filter->cleanup,
+            next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_stability : (float)filter->stability,
+            next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_follow : (float)filter->follow_speed);
     const bool wanted_test = obs_data_get_bool(settings, SETTING_RUNTIME_TEST);
     if (filter->ai && (!wanted_test || next_engine != CAMLAYER_AI_MEDIAPIPE)) {
         camlayer_ai_close(filter->ai);
@@ -145,9 +160,11 @@ static void camlayer_update(void *data, obs_data_t *settings)
             blog(LOG_WARNING, "[CamLayer] Could not create live inference worker");
         if (filter->worker)
             camlayer_worker_set_refinement(filter->worker,
-                                           (float)filter->threshold, (float)filter->softness,
-                                           (float)filter->cleanup, (float)filter->stability,
-                                           (float)filter->follow_speed);
+                                           next_engine == CAMLAYER_AI_RVM ? 0.50f : (float)filter->threshold,
+                                           next_engine == CAMLAYER_AI_RVM ? 0.0f : (float)filter->softness,
+                                           next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_cleanup : (float)filter->cleanup,
+                                           next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_stability : (float)filter->stability,
+                                           next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_follow : (float)filter->follow_speed);
         bfree(model_path);
     }
     if (wanted_test && next_engine == CAMLAYER_AI_MEDIAPIPE && !filter->ai) {
@@ -209,6 +226,9 @@ static void *camlayer_create(obs_data_t *settings, obs_source_t *source)
             gs_effect_get_param_by_name(filter->alpha_effect, "edge_feather_width");
         filter->detail_parameter =
             gs_effect_get_param_by_name(filter->alpha_effect, "edge_detail");
+        filter->rvm_mode_parameter = gs_effect_get_param_by_name(filter->alpha_effect, "rvm_mode");
+        filter->rvm_black_parameter = gs_effect_get_param_by_name(filter->alpha_effect, "rvm_alpha_black");
+        filter->rvm_white_parameter = gs_effect_get_param_by_name(filter->alpha_effect, "rvm_alpha_white");
     }
     obs_leave_graphics();
 
@@ -234,11 +254,33 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_double(settings, SETTING_CLEANUP, 0.0);
     obs_data_set_default_double(settings, SETTING_STABILITY, 1.0);
     obs_data_set_default_double(settings, SETTING_FOLLOW_SPEED, 1.0);
+    obs_data_set_default_double(settings, SETTING_RVM_BLACK, 0.0);
+    obs_data_set_default_double(settings, SETTING_RVM_WHITE, 1.0);
+    obs_data_set_default_double(settings, SETTING_RVM_CLEANUP, 0.0);
+    obs_data_set_default_double(settings, SETTING_RVM_STABILITY, 0.0);
+    obs_data_set_default_double(settings, SETTING_RVM_FOLLOW, 1.0);
     obs_data_set_default_bool(settings, SETTING_DIAGNOSTIC, false);
     obs_data_set_default_int(settings, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
     obs_data_set_default_bool(settings, SETTING_RUNTIME_TEST, false);
     obs_data_set_default_bool(settings, SETTING_LIVE_AI, false);
 
+}
+
+static bool camlayer_engine_modified(obs_properties_t *props, obs_property_t *property,
+                                     obs_data_t *settings)
+{
+    UNUSED_PARAMETER(property);
+    const bool rvm = obs_data_get_int(settings, SETTING_AI_ENGINE) == CAMLAYER_AI_RVM;
+    const char *media[] = {SETTING_THRESHOLD, SETTING_SOFTNESS, SETTING_FEATHER_WIDTH,
+                           SETTING_EDGE_DETAIL, SETTING_CLEANUP, SETTING_STABILITY,
+                           SETTING_FOLLOW_SPEED};
+    const char *rvm_props[] = {SETTING_RVM_BLACK, SETTING_RVM_WHITE, SETTING_RVM_CLEANUP,
+                               SETTING_RVM_STABILITY, SETTING_RVM_FOLLOW};
+    for (size_t i = 0; i < sizeof(media) / sizeof(media[0]); ++i)
+        obs_property_set_visible(obs_properties_get(props, media[i]), !rvm);
+    for (size_t i = 0; i < sizeof(rvm_props) / sizeof(rvm_props[0]); ++i)
+        obs_property_set_visible(obs_properties_get(props, rvm_props[i]), rvm);
+    return true;
 }
 
 static obs_properties_t *camlayer_properties(void *data)
@@ -253,6 +295,7 @@ static obs_properties_t *camlayer_properties(void *data)
                               CAMLAYER_AI_MEDIAPIPE);
     obs_property_list_add_int(engine, obs_module_text("CamLayer.EngineRVM"),
                               CAMLAYER_AI_RVM);
+    obs_property_set_modified_callback(engine, camlayer_engine_modified);
     obs_properties_add_bool(props, SETTING_RUNTIME_TEST,
                             obs_module_text("CamLayer.RuntimeTest"));
     obs_properties_add_bool(props, SETTING_LIVE_AI,
@@ -277,6 +320,27 @@ static obs_properties_t *camlayer_properties(void *data)
                                     obs_module_text("CamLayer.Stability"), 0.0, 2.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_FOLLOW_SPEED,
                                     obs_module_text("CamLayer.FollowSpeed"), 0.0, 5.0, 0.05);
+    obs_properties_add_float_slider(props, SETTING_RVM_BLACK,
+                                    obs_module_text("CamLayer.RVMBlack"), 0.0, 0.9, 0.01);
+    obs_properties_add_float_slider(props, SETTING_RVM_WHITE,
+                                    obs_module_text("CamLayer.RVMWhite"), 0.1, 1.0, 0.01);
+    obs_properties_add_float_slider(props, SETTING_RVM_CLEANUP,
+                                    obs_module_text("CamLayer.RVMCleanup"), 0.0, 1.0, 0.05);
+    obs_properties_add_float_slider(props, SETTING_RVM_STABILITY,
+                                    obs_module_text("CamLayer.RVMStability"), 0.0, 2.0, 0.05);
+    obs_properties_add_float_slider(props, SETTING_RVM_FOLLOW,
+                                    obs_module_text("CamLayer.RVMFollow"), 0.0, 5.0, 0.05);
+    if (data) {
+        struct camlayer_filter *filter = data;
+        obs_data_t *current = obs_source_get_settings(filter->source);
+        camlayer_engine_modified(props, engine, current);
+        obs_data_release(current);
+    } else {
+        obs_data_t *defaults = obs_data_create();
+        obs_data_set_int(defaults, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
+        camlayer_engine_modified(props, engine, defaults);
+        obs_data_release(defaults);
+    }
     obs_properties_add_text(props, "bootstrap_info",
                             obs_module_text("CamLayer.BootstrapNotice"),
                             OBS_TEXT_INFO);
@@ -326,7 +390,8 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
     /* Follow speed 0 -> 10 Hz, 1 -> 20 Hz, 2 -> 30 Hz, 5 -> 60 Hz.
      * Actual mask FPS may remain below this rate on slower CPUs.
      */
-    const double follow = fmax(0.0, fmin(5.0, filter->follow_speed));
+    const double follow = fmax(0.0, fmin(5.0,
+        filter->engine == CAMLAYER_AI_RVM ? filter->rvm_follow : filter->follow_speed));
     const uint64_t capture_interval = (uint64_t)(100000000.0 / (1.0 + follow));
     if (now - filter->last_capture < capture_interval)
         return;
@@ -388,7 +453,7 @@ static void camlayer_publish_mask(struct camlayer_filter *filter)
         gs_texture_set_image(filter->mask_texture, filter->mask_bytes,
                              CAMLAYER_MASK_SIDE, false);
         if (!filter->mask_ready)
-            blog(LOG_INFO, "[CamLayer] First live MediaPipe alpha mask uploaded to GPU");
+            blog(LOG_INFO, "[CamLayer] First live %s alpha mask uploaded to GPU", camlayer_engine_name(filter->engine));
         filter->mask_ready = true;
     }
     UNUSED_PARAMETER(timestamp);
@@ -418,6 +483,12 @@ static void camlayer_render(void *data, gs_effect_t *unused)
                             filter->mask_ready && filter->mask_texture;
     if (filter->mask_enabled_parameter)
         gs_effect_set_bool(filter->mask_enabled_parameter, apply_mask);
+    if (filter->rvm_mode_parameter)
+        gs_effect_set_bool(filter->rvm_mode_parameter, filter->engine == CAMLAYER_AI_RVM);
+    if (filter->rvm_black_parameter)
+        gs_effect_set_float(filter->rvm_black_parameter, (float)filter->rvm_black);
+    if (filter->rvm_white_parameter)
+        gs_effect_set_float(filter->rvm_white_parameter, (float)filter->rvm_white);
     if (filter->threshold_parameter)
         gs_effect_set_float(filter->threshold_parameter, (float)filter->threshold);
     if (filter->softness_parameter)
