@@ -206,6 +206,22 @@ int main(int argc, char **argv)
         std::cerr << "Advanced refinement modified confident model pixels\n";
         return 1;
     }
+    // Strong background evidence should also repair a hard AI boundary,
+    // rather than only changing pixels that were semi-transparent already.
+    colors.rgb[CAMLAYER_COLOR_HAIR] = 0x554433;
+    std::fill(color_alpha.begin(), color_alpha.end(), 0.0f);
+    for (int y = 90; y < 166; ++y) {
+        for (int x = 90; x < 166; ++x)
+            color_alpha[size_t(y) * 256 + x] = 1.0f;
+    }
+    const size_t edge_in = size_t(120) * 256 + 90;
+    const size_t deep_in = size_t(120) * 256 + 120;
+    camlayer_color_refine(color_alpha.data(), color_alpha.size(),
+                          color_frame.data(), color_frame.size(), &colors);
+    if (!(color_alpha[edge_in] < 0.9f && color_alpha[deep_in] == 1.0f)) {
+        std::cerr << "Color correction must affect hard edge, not interior\n";
+        return 1;
+    }
     // Confirm the same model can run outside the caller's thread.
     camlayer_worker *worker = camlayer_worker_create(CAMLAYER_BACKEND_MEDIAPIPE, argv[1]);
     if (!worker) return 1;
