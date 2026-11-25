@@ -75,37 +75,49 @@ void MaskRefiner::finish_alpha(float *mask, float threshold, float softness) noe
         alpha_buffer[i] = t * t * (3.0f - 2.0f * t);
     }
     const float desired = std::fabs(softness) * 2.4f;
-    const int radius = std::min(8, static_cast<int>(std::ceil(desired)));
-    const float blend = std::min(1.0f, desired);
-    if (radius == 0 || blend == 0.0f) {
+    if (desired <= 0.0f) {
         std::copy(alpha_buffer.begin(), alpha_buffer.end(), mask);
         return;
     }
     const bool expand = softness > 0.0f;
-    // Separable min/max morphology. Radius is measured in 256px mask pixels,
-    // not full-HD render pixels. No allocation or GPU readback here.
-    for (int y = 0; y < kSide; ++y) {
-        for (int x = 0; x < kSide; ++x) {
-            float extremum = expand ? 0.0f : 1.0f;
-            for (int dx = -radius; dx <= radius; ++dx) {
-                const int xx = std::clamp(x + dx, 0, kSide - 1);
-                const float v = alpha_buffer[y * kSide + xx];
-                extremum = expand ? std::max(extremum, v) : std::min(extremum, v);
-            }
-            morph_row[y * kSide + x] = extremum;
+    const int lower = std::min(8, static_cast<int>(std::floor(desired)));
+    const int upper = std::min(8, lower + 1);
+    const float fraction = std::clamp(desired - float(lower), 0.0f, 1.0f);
+    // Interpolate between adjacent morphology radii. Both mask shape
+    // and output alpha evolve continuously when softness moves.
+    const auto morph = [&](int radius, float *output) {
+        if (radius == 0) {
+            std::copy(alpha_buffer.begin(), alpha_buffer.end(), output);
+            return;
         }
-    }
-    for (int y = 0; y < kSide; ++y) {
-        for (int x = 0; x < kSide; ++x) {
-            float extremum = expand ? 0.0f : 1.0f;
-            for (int dy = -radius; dy <= radius; ++dy) {
-                const int yy = std::clamp(y + dy, 0, kSide - 1);
-                const float v = morph_row[yy * kSide + x];
-                extremum = expand ? std::max(extremum, v) : std::min(extremum, v);
+        for (int y = 0; y < kSide; ++y) {
+            for (int x = 0; x < kSide; ++x) {
+                float v = expand ? 0.0f : 1.0f;
+                for (int dx = -radius; dx <= radius; ++dx) {
+                    const int xx = std::clamp(x + dx, 0, kSide - 1);
+                    const float p = alpha_buffer[y * kSide + xx];
+                    v = expand ? std::max(v, p) : std::min(v, p);
+                }
+                morph_row[y * kSide + x] = v;
             }
-            const int i = y * kSide + x;
-            mask[i] = alpha_buffer[i] * (1.0f - blend) + extremum * blend;
         }
+        for (int y = 0; y < kSide; ++y) {
+            for (int x = 0; x < kSide; ++x) {
+                float v = expand ? 0.0f : 1.0f;
+                for (int dy = -radius; dy <= radius; ++dy) {
+                    const int yy = std::clamp(y + dy, 0, kSide - 1);
+                    const float p = morph_row[yy * kSide + x];
+                    v = expand ? std::max(v, p) : std::min(v, p);
+                }
+                output[y * kSide + x] = v;
+            }
+        }
+    };
+    morph(lower, mask);
+    if (fraction > 0.0f && upper != lower) {
+        morph(upper, scratch.data());
+        for (int i = 0; i < kPixels; ++i)
+            mask[i] += fraction * (scratch[i] - mask[i]);
     }
 
     // Morphology changes the silhouette position, not its edge opacity.
@@ -114,7 +126,7 @@ void MaskRefiner::finish_alpha(float *mask, float threshold, float softness) noe
     // Keep the signed inward/outward displacement above, but use magnitude
     // to control an independent feather radius and blending amount.
     const float sigma = 0.60f + std::fabs(softness) * 1.15f;
-    const int feather_radius = std::min(8, static_cast<int>(std::ceil(sigma * 2.5f)));
+    const int feather_radius = 8; // Fixed Gaussian support avoids step changes.
     const float feather_strength = std::min(1.0f, std::fabs(softness) * 1.7f);
     float kernel[9] = {};
     float weight_sum = 0.0f;
