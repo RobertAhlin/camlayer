@@ -279,17 +279,12 @@ int main(int argc, char **argv)
         std::cerr << "Async worker did not publish a valid timestamped mask\n";
         return 1;
     }
-    // RVM is represented honestly as unavailable until the backend exists.
+    // RVM requires a valid official model path and is tested separately
+    // with recurrent inference in rvm-engine-smoke.cpp.
     worker = camlayer_worker_create(CAMLAYER_BACKEND_RVM, nullptr);
-    if (!worker) return 1;
-    for (int i = 0; i < 50 &&
-         camlayer_worker_get_status(worker) == CAMLAYER_WORKER_STARTING; ++i)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    const bool rvm_unavailable =
-        camlayer_worker_get_status(worker) == CAMLAYER_WORKER_UNAVAILABLE;
-    camlayer_worker_destroy(worker);
-    if (!rvm_unavailable) {
-        std::cerr << "RVM placeholder must not report ready\n";
+    if (worker) {
+        std::cerr << "Missing RVM model path must not create a worker\n";
+        camlayer_worker_destroy(worker);
         return 1;
     }
     std::cout << "CamLayer OBS native engine API smoke test: PASS\n";
