@@ -3,6 +3,7 @@ uniform texture2d image;
 uniform bool ellipse_enabled;
 uniform bool mask_enabled;
 uniform texture2d ai_mask;
+uniform float edge_feather_width;
 
 sampler_state maskSampler {
     Filter   = Linear;
@@ -34,9 +35,28 @@ float4 PSAlphaDiagnostic(VertData v_in) : TARGET
     float4 rgba = image.Sample(textureSampler, v_in.uv);
 
     if (mask_enabled) {
-        // The inference worker already applied threshold and signed
-        // inward/outward morphology. Interpolate the finished alpha mask.
-        rgba.a *= ai_mask.Sample(maskSampler, v_in.uv).r;
+        // The inference worker computes the actual matte and signed
+        // softness. The source matte is 256x256, so a small 9-tap GPU
+        // reconstruction filter reduces the stair-step artifact when the
+        // mask is drawn over a much larger HD/4K camera source.
+        // This GPU feather width is independent of the signed softness.
+        float2 texel = float2(1.0 / 256.0, 1.0 / 256.0);
+        float width = max(0.0, min(3.0, edge_feather_width));
+        float2 stepUV = texel * (0.50 + width * 0.55);
+        float center = ai_mask.Sample(maskSampler, v_in.uv).r;
+        float axes =
+            ai_mask.Sample(maskSampler, v_in.uv + float2( stepUV.x, 0.0)).r +
+            ai_mask.Sample(maskSampler, v_in.uv + float2(-stepUV.x, 0.0)).r +
+            ai_mask.Sample(maskSampler, v_in.uv + float2(0.0,  stepUV.y)).r +
+            ai_mask.Sample(maskSampler, v_in.uv + float2(0.0, -stepUV.y)).r;
+        float corners =
+            ai_mask.Sample(maskSampler, v_in.uv + float2( stepUV.x,  stepUV.y)).r +
+            ai_mask.Sample(maskSampler, v_in.uv + float2(-stepUV.x,  stepUV.y)).r +
+            ai_mask.Sample(maskSampler, v_in.uv + float2( stepUV.x, -stepUV.y)).r +
+            ai_mask.Sample(maskSampler, v_in.uv + float2(-stepUV.x, -stepUV.y)).r;
+        float smoothAlpha = (4.0 * center + 2.0 * axes + corners) / 16.0;
+        float alpha = lerp(center, smoothAlpha, min(1.0, width * 0.65));
+        rgba.a *= alpha;
     } else if (ellipse_enabled) {
         float2 normalized = (v_in.uv - float2(0.5, 0.54)) /
                             float2(0.34, 0.48);
