@@ -75,8 +75,6 @@ jobs:
           Copy-Item 'camlayer/native/obs-plugin/src/rvm-engine.h' 'obs-template/src/rvm-engine.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-mask-refine.h' 'obs-template/src/ai-mask-refine.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-mask-refine.cpp' 'obs-template/src/ai-mask-refine.cpp' -Force
-          Copy-Item 'camlayer/native/obs-plugin/src/ai-color-refine.cpp' 'obs-template/src/ai-color-refine.cpp' -Force
-          Copy-Item 'camlayer/native/obs-plugin/src/ai-color-refine.h' 'obs-template/src/ai-color-refine.h' -Force
           New-Item -ItemType Directory -Force -Path 'obs-template/data/models' | Out-Null
           Copy-Item 'deps/selfie_segmentation.onnx' 'obs-template/data/models/selfie_segmentation.onnx' -Force
           Copy-Item 'deps/rvm_mobilenetv3_fp32.onnx' 'obs-template/data/models/rvm_mobilenetv3_fp32.onnx' -Force
@@ -85,7 +83,7 @@ jobs:
           Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.lib' 'obs-template/dependencies/onnxruntime/onnxruntime.lib' -Force
           $cmake = 'obs-template/CMakeLists.txt'
           Add-Content $cmake @'
-          target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ai-engine.cpp src/ai-worker.cpp src/ai-mask-refine.cpp src/ai-color-refine.cpp src/rvm-engine.cpp)
+          target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/ai-engine.cpp src/ai-worker.cpp src/ai-mask-refine.cpp src/rvm-engine.cpp)
           target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
           if(MSVC)
             target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/EHsc>)
@@ -137,7 +135,7 @@ jobs:
           $vsPath = & $vswhere -latest -products '*' -property installationPath
           if (-not $vsPath) { throw 'Visual Studio build tools unavailable.' }
           $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
-          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /I`"deps/ort/build/native/include`" camlayer/native/obs-plugin/src/ai-engine.cpp camlayer/native/obs-plugin/src/ai-worker.cpp camlayer/native/obs-plugin/src/ai-mask-refine.cpp camlayer/native/obs-plugin/src/ai-color-refine.cpp camlayer/native/obs-plugin/src/rvm-engine.cpp camlayer/native/obs-plugin/tests/native-engine-smoke.cpp /link /LIBPATH:`"deps/ort/runtimes/win-x64/native`" onnxruntime.lib /OUT:camlayer-native-smoke.exe"
+          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 /I`"deps/ort/build/native/include`" camlayer/native/obs-plugin/src/ai-engine.cpp camlayer/native/obs-plugin/src/ai-worker.cpp camlayer/native/obs-plugin/src/ai-mask-refine.cpp camlayer/native/obs-plugin/src/rvm-engine.cpp camlayer/native/obs-plugin/tests/native-engine-smoke.cpp /link /LIBPATH:`"deps/ort/runtimes/win-x64/native`" onnxruntime.lib /OUT:camlayer-native-smoke.exe"
           cmd /c $cmd
           if ($LASTEXITCODE -ne 0) { throw "Smoke test compilation failed: $LASTEXITCODE" }
           Copy-Item 'deps/ort/runtimes/win-x64/native/onnxruntime.dll' './onnxruntime.dll' -Force
