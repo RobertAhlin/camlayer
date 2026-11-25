@@ -4,6 +4,7 @@ uniform bool ellipse_enabled;
 uniform bool mask_enabled;
 uniform texture2d ai_mask;
 uniform float edge_feather_width;
+uniform float edge_detail;
 
 sampler_state maskSampler {
     Filter   = Linear;
@@ -35,27 +36,67 @@ float4 PSAlphaDiagnostic(VertData v_in) : TARGET
     float4 rgba = image.Sample(textureSampler, v_in.uv);
 
     if (mask_enabled) {
-        // The inference worker computes the actual matte and signed
-        // softness. The source matte is 256x256, so a small 9-tap GPU
-        // reconstruction filter reduces the stair-step artifact when the
-        // mask is drawn over a much larger HD/4K camera source.
-        // This GPU feather width is independent of the signed softness.
+        // The native matte is 256x256. Sample a local 3x3 neighborhood
+        // at mask-pixel spacing, then use the full-resolution camera color
+        // as a guide to avoid averaging across real image boundaries.
+        // No extra model resolution is claimed: this is edge-aware upsampling.
         float2 texel = float2(1.0 / 256.0, 1.0 / 256.0);
-        float width = max(0.0, min(3.0, edge_feather_width));
-        float2 stepUV = texel * (0.50 + width * 0.55);
-        float center = ai_mask.Sample(maskSampler, v_in.uv).r;
-        float axes =
-            ai_mask.Sample(maskSampler, v_in.uv + float2( stepUV.x, 0.0)).r +
-            ai_mask.Sample(maskSampler, v_in.uv + float2(-stepUV.x, 0.0)).r +
-            ai_mask.Sample(maskSampler, v_in.uv + float2(0.0,  stepUV.y)).r +
-            ai_mask.Sample(maskSampler, v_in.uv + float2(0.0, -stepUV.y)).r;
-        float corners =
-            ai_mask.Sample(maskSampler, v_in.uv + float2( stepUV.x,  stepUV.y)).r +
-            ai_mask.Sample(maskSampler, v_in.uv + float2(-stepUV.x,  stepUV.y)).r +
-            ai_mask.Sample(maskSampler, v_in.uv + float2( stepUV.x, -stepUV.y)).r +
-            ai_mask.Sample(maskSampler, v_in.uv + float2(-stepUV.x, -stepUV.y)).r;
-        float smoothAlpha = (4.0 * center + 2.0 * axes + corners) / 16.0;
-        float alpha = lerp(center, smoothAlpha, min(1.0, width * 0.65));
+        float width = clamp(edge_feather_width, 0.0, 3.0);
+        float detail = clamp(edge_detail, 0.0, 2.0);
+        float2 offset = texel * (0.50 + width * 0.55);
+        float2 dx = float2(offset.x, 0.0);
+        float2 dy = float2(0.0, offset.y);
+
+        float a0 = ai_mask.Sample(maskSampler, v_in.uv).r;
+        float a1 = ai_mask.Sample(maskSampler, v_in.uv + dx).r;
+        float a2 = ai_mask.Sample(maskSampler, v_in.uv - dx).r;
+        float a3 = ai_mask.Sample(maskSampler, v_in.uv + dy).r;
+        float a4 = ai_mask.Sample(maskSampler, v_in.uv - dy).r;
+        float a5 = ai_mask.Sample(maskSampler, v_in.uv + dx + dy).r;
+        float a6 = ai_mask.Sample(maskSampler, v_in.uv - dx + dy).r;
+        float a7 = ai_mask.Sample(maskSampler, v_in.uv + dx - dy).r;
+        float a8 = ai_mask.Sample(maskSampler, v_in.uv - dx - dy).r;
+
+        float smoothAlpha = (4.0 * a0 +
+                            2.0 * (a1 + a2 + a3 + a4) +
+                            (a5 + a6 + a7 + a8)) / 16.0;
+        float feather = lerp(a0, smoothAlpha, min(1.0, width * 0.65));
+        float alpha = feather;
+
+        // Compute the guided reconstruction only near an actual alpha
+        // boundary and only when detail is enabled. This avoids any
+        // unnecessary changes to solid foreground and background.
+        float localMin = min(a0, min(min(a1, a2), min(a3, a4)));
+        float localMax = max(a0, max(max(a1, a2), max(a3, a4)));
+        if (detail > 0.001 && (localMax - localMin) > 0.015) {
+            float3 color = rgba.rgb;
+            float3 c1 = image.Sample(textureSampler, v_in.uv + dx).rgb - color;
+            float3 c2 = image.Sample(textureSampler, v_in.uv - dx).rgb - color;
+            float3 c3 = image.Sample(textureSampler, v_in.uv + dy).rgb - color;
+            float3 c4 = image.Sample(textureSampler, v_in.uv - dy).rgb - color;
+            float3 c5 = image.Sample(textureSampler, v_in.uv + dx + dy).rgb - color;
+            float3 c6 = image.Sample(textureSampler, v_in.uv - dx + dy).rgb - color;
+            float3 c7 = image.Sample(textureSampler, v_in.uv + dx - dy).rgb - color;
+            float3 c8 = image.Sample(textureSampler, v_in.uv - dx - dy).rgb - color;
+            // Squared RGB distance is a conservative approximation, not
+            // a chroma key. Large color differences receive low weight.
+            float sensitivity = detail * 45.0;
+            float w1 = 2.0 / (1.0 + sensitivity * dot(c1,c1));
+            float w2 = 2.0 / (1.0 + sensitivity * dot(c2,c2));
+            float w3 = 2.0 / (1.0 + sensitivity * dot(c3,c3));
+            float w4 = 2.0 / (1.0 + sensitivity * dot(c4,c4));
+            float w5 = 1.0 / (1.0 + sensitivity * dot(c5,c5));
+            float w6 = 1.0 / (1.0 + sensitivity * dot(c6,c6));
+            float w7 = 1.0 / (1.0 + sensitivity * dot(c7,c7));
+            float w8 = 1.0 / (1.0 + sensitivity * dot(c8,c8));
+            float weightSum = 4.0 + w1 + w2 + w3 + w4 +
+                              w5 + w6 + w7 + w8;
+            float guided = (4.0 * a0 + w1*a1 + w2*a2 + w3*a3 + w4*a4 +
+                            w5*a5 + w6*a6 + w7*a7 + w8*a8) / weightSum;
+            // Increasing detail replaces broad feathering with narrow,
+            // camera-guided reconstruction rather than over-sharpening.
+            alpha = lerp(feather, guided, min(1.0, detail));
+        }
         rgba.a *= alpha;
     } else if (ellipse_enabled) {
         float2 normalized = (v_in.uv - float2(0.5, 0.54)) /
