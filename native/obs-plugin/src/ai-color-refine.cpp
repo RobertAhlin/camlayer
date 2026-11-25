@@ -3,6 +3,7 @@
 #include "ai-color-refine.h"
 #include <algorithm>
 #include <cmath>
+#include <array>
 
 namespace {
 constexpr size_t kPixels = 256u * 256u;
@@ -40,17 +41,22 @@ extern "C" void camlayer_color_refine(
     // overconfident, without acting as a full-frame chroma key.
     constexpr int kSide = 256;
     constexpr int kRadius = 2;
+    // Read immutable source alpha to avoid scan-order-dependent results.
+    // This buffer is reused on each inference thread without per-frame
+    // allocations once initialized.
+    thread_local std::array<float, kPixels> source;
+    std::copy_n(alpha, kPixels, source.data());
     for (int y = 0; y < kSide; ++y) {
         for (int x = 0; x < kSide; ++x) {
             const size_t i = size_t(y) * kSide + x;
-            const float current = std::clamp(alpha[i], 0.0f, 1.0f);
+            const float current = std::clamp(source[i], 0.0f, 1.0f);
             float minimum = current;
             float maximum = current;
             for (int dy = -kRadius; dy <= kRadius; ++dy) {
                 const int yy = std::clamp(y + dy, 0, kSide - 1);
                 for (int dx = -kRadius; dx <= kRadius; ++dx) {
                     const int xx = std::clamp(x + dx, 0, kSide - 1);
-                    const float sample = alpha[size_t(yy) * kSide + xx];
+                    const float sample = source[size_t(yy) * kSide + xx];
                     minimum = std::min(minimum, sample);
                     maximum = std::max(maximum, sample);
                 }
