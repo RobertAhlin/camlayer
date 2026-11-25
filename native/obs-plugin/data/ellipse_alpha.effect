@@ -5,6 +5,9 @@ uniform bool mask_enabled;
 uniform texture2d ai_mask;
 uniform float edge_feather_width;
 uniform float edge_detail;
+uniform bool rvm_mode;
+uniform float rvm_alpha_black;
+uniform float rvm_alpha_white;
 
 sampler_state maskSampler {
     Filter   = Linear;
@@ -35,7 +38,14 @@ float4 PSAlphaDiagnostic(VertData v_in) : TARGET
 {
     float4 rgba = image.Sample(textureSampler, v_in.uv);
 
-    if (mask_enabled) {
+    if (mask_enabled && rvm_mode) {
+        // Keep RVM's native soft alpha and avoid the MediaPipe feather pass.
+        // Black/white point controls can remove faint residual background.
+        float rawAlpha = ai_mask.Sample(maskSampler, v_in.uv).r;
+        float low = clamp(rvm_alpha_black, 0.0, 0.9);
+        float high = max(low + 0.01, clamp(rvm_alpha_white, 0.1, 1.0));
+        rgba.a *= saturate((rawAlpha - low) / (high - low));
+    } else if (mask_enabled) {
         // The native matte is 256x256. Sample a local 3x3 neighborhood
         // at mask-pixel spacing, then use the full-resolution camera color
         // as a guide to avoid averaging across real image boundaries.
