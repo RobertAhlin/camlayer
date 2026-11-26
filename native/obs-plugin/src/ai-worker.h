@@ -41,6 +41,13 @@ int camlayer_worker_take_mask(camlayer_worker *worker, float *dst,
 void camlayer_worker_set_refinement(camlayer_worker *worker, float threshold,
                                     float softness, float cleanup,
                                     float stability, float follow_speed);
+/* RVM-only controls, sampled along with each frame in the worker thread.
+ * Feather width uses 256x256 mask pixels, not output-resolution pixels.
+ * Alpha is remapped before signed-distance feathering.
+ */
+void camlayer_worker_set_rvm_feather(camlayer_worker *worker, float black,
+                                     float white, float softness, float width,
+                                     float inner_share);
 /* Clears temporal state after camera disconnect or geometry change. */
 void camlayer_worker_reset_refinement(camlayer_worker *worker);
 int camlayer_worker_get_status(camlayer_worker *worker);
