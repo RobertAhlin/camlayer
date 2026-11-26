@@ -145,6 +145,20 @@ jobs:
           & ./camlayer-native-smoke.exe 'deps/selfie_segmentation.onnx'
           if ($LASTEXITCODE -ne 0) { throw "ONNX engine smoke test failed: $LASTEXITCODE" }
 
+      - name: Smoke-test continuous RVM Gaussian feather
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsPath = & $vswhere -latest -products '*' -property installationPath
+          if (-not $vsPath) { throw 'Visual Studio build tools unavailable.' }
+          $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 camlayer/native/obs-plugin/tests/rvm-alpha-feather-smoke.cpp /Fe:camlayer-rvm-feather-smoke.exe"
+          cmd /c $cmd
+          if ($LASTEXITCODE -ne 0) { throw "RVM feather test compile failed: $LASTEXITCODE" }
+          & ./camlayer-rvm-feather-smoke.exe
+          if ($LASTEXITCODE -ne 0) { throw "RVM feather test failed: $LASTEXITCODE" }
+
       - name: Smoke-test RVM model and recurrent state with synthetic frames
         shell: pwsh
         run: |
