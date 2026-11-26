@@ -34,9 +34,12 @@ public:
         distance_to_class(false, outside_distance_);
         for (int i = 0; i < pixels; ++i) {
             // Positive distance = inside. Half-pixel centers the boundary.
-            const float distance = occupancy_[i]
+            const float distance = (occupancy_[i]
                 ? std::sqrt(outside_distance_[i]) - 0.5f
-                : 0.5f - std::sqrt(inside_distance_[i]);
+                : 0.5f - std::sqrt(inside_distance_[i]))
+                // Retain subpixel alpha-edge information from the RVM matte.
+                // This nudges the contour without reintroducing a hard alpha blend.
+                + (std::clamp(alpha[i], 0.0f, 1.0f) - 0.5f) * 0.6f;
             float t = std::clamp((distance + outer) / (inner + outer), 0.0f, 1.0f);
             // Smoothstep has zero slope at both edges of the feather zone.
             alpha[i] = t * t * (3.0f - 2.0f * t);
