@@ -278,7 +278,7 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_double(settings, SETTING_RVM_FOLLOW, 1.0);
     obs_data_set_default_double(settings, SETTING_RVM_FEATHER, 0.0);
     obs_data_set_default_double(settings, SETTING_RVM_FEATHER_WIDTH, 4.0);
-    obs_data_set_default_double(settings, SETTING_RVM_INNER, 0.75);
+    obs_data_set_default_double(settings, SETTING_RVM_INNER, 0.50);
     obs_data_set_default_bool(settings, SETTING_DIAGNOSTIC, false);
     obs_data_set_default_int(settings, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
     obs_data_set_default_bool(settings, SETTING_RUNTIME_TEST, false);
