@@ -5,6 +5,7 @@
 #include "ai-engine.h"
 #include "rvm-engine.h"
 #include "ai-mask-refine.h"
+#include "rvm-distance-feather.h"
 #include <algorithm>
 #include <array>
 #include <condition_variable>
@@ -41,6 +42,11 @@ struct camlayer_worker {
     float cleanup = 0.0f;
     float stability = 0.0f;
     float follow_speed = 1.0f;
+    float rvm_black = 0.0f;
+    float rvm_white = 1.0f;
+    float rvm_softness = 0.0f;
+    float rvm_width = 8.0f;
+    float rvm_inner_share = 0.75f;
     uint64_t reset_epoch = 0;
 
     camlayer_worker(int engine, const char *path)
@@ -71,7 +77,9 @@ static void run_worker(camlayer_worker *worker) noexcept
     // Keep the large temporal mask buffers off the small Windows thread stack.
     std::unique_ptr<camlayer::MaskRefiner> refiner(
         new (std::nothrow) camlayer::MaskRefiner());
-    if (!refiner) {
+    std::unique_ptr<camlayer::RvmDistanceFeather> sdf;
+    if (rvm) sdf.reset(new (std::nothrow) camlayer::RvmDistanceFeather());
+    if (!refiner || (rvm && !sdf)) {
         camlayer_ai_close(media);
         camlayer_rvm_close(rvm);
         std::lock_guard<std::mutex> lock(worker->mutex);
@@ -86,6 +94,8 @@ static void run_worker(camlayer_worker *worker) noexcept
         float cleanup = 0.0f;
         float stability = 0.0f;
         float follow_speed = 1.0f;
+        float rvm_black = 0.0f, rvm_white = 1.0f;
+        float rvm_softness = 0.0f, rvm_width = 8.0f, rvm_inner_share = 0.75f;
         uint64_t epoch = 0;
         {
             std::unique_lock<std::mutex> lock(worker->mutex);
@@ -98,6 +108,11 @@ static void run_worker(camlayer_worker *worker) noexcept
             cleanup = worker->cleanup;
             stability = worker->stability;
             follow_speed = worker->follow_speed;
+            rvm_black = worker->rvm_black;
+            rvm_white = worker->rvm_white;
+            rvm_softness = worker->rvm_softness;
+            rvm_width = worker->rvm_width;
+            rvm_inner_share = worker->rvm_inner_share;
             epoch = worker->reset_epoch;
             worker->pending = false;
         }
@@ -120,6 +135,15 @@ static void run_worker(camlayer_worker *worker) noexcept
                 if (cleanup > 0.0f || stability > 0.0f)
                     refiner->process(computed.data(), cleanup, stability,
                                      follow_speed, timestamp);
+                // Apply black/white point before computing the 0.5 contour.
+                // With softness zero this matches the previous RVM GPU remap.
+                const float span = std::max(0.01f, rvm_white - rvm_black);
+                for (float &a : computed) {
+                    a = std::clamp((std::isfinite(a) ? a : 0.0f) - rvm_black,
+                                   0.0f, span) / span;
+                }
+                sdf->apply(computed.data(), rvm_softness, rvm_width,
+                           rvm_inner_share);
             } else {
                 refiner->process(computed.data(), cleanup, stability, follow_speed, timestamp);
                 refiner->finish_alpha(computed.data(), threshold, softness);
@@ -249,3 +273,17 @@ extern "C" void camlayer_worker_reset_refinement(camlayer_worker *worker)
     worker->pending = false;
 }
 
+
+extern "C" void camlayer_worker_set_rvm_feather(
+    camlayer_worker *worker, float black, float white,
+    float softness, float width, float inner_share)
+{
+    if (!worker) return;
+    std::lock_guard<std::mutex> lock(worker->mutex);
+    worker->rvm_black = std::clamp(black, 0.0f, 0.9f);
+    worker->rvm_white = std::max(worker->rvm_black + 0.01f,
+                                 std::clamp(white, 0.1f, 1.0f));
+    worker->rvm_softness = std::clamp(softness, 0.0f, 5.0f);
+    worker->rvm_width = std::clamp(width, 0.0f, 20.0f);
+    worker->rvm_inner_share = std::clamp(inner_share, 0.0f, 1.0f);
+}
