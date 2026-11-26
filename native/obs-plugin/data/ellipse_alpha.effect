@@ -8,6 +8,8 @@ uniform float edge_detail;
 uniform bool rvm_mode;
 uniform float rvm_alpha_black;
 uniform float rvm_alpha_white;
+uniform float rvm_edge_feather;
+uniform float rvm_edge_feather_width;
 
 sampler_state maskSampler {
     Filter   = Linear;
@@ -44,7 +46,31 @@ float4 PSAlphaDiagnostic(VertData v_in) : TARGET
         float rawAlpha = ai_mask.Sample(maskSampler, v_in.uv).r;
         float low = clamp(rvm_alpha_black, 0.0, 0.9);
         float high = max(low + 0.01, clamp(rvm_alpha_white, 0.1, 1.0));
-        rgba.a *= saturate((rawAlpha - low) / (high - low));
+        float alpha = saturate((rawAlpha - low) / (high - low));
+        // RVM's native matte is already soft. Only blend in a small, symmetric
+        // neighborhood when the user explicitly enables feathering. The two
+        // controls independently set blend strength and sampling radius.
+        float featherStrength = saturate(rvm_edge_feather);
+        float featherRadius = clamp(rvm_edge_feather_width, 0.0, 3.0);
+        if (featherStrength > 0.001 && featherRadius > 0.001) {
+            float2 offset = float2(1.0 / 256.0, 1.0 / 256.0) * featherRadius;
+            float2 dx = float2(offset.x, 0.0);
+            float2 dy = float2(0.0, offset.y);
+            // Blur the already remapped alpha, not the source mask. This
+            // prevents black/white points from reintroducing a second edge.
+            float a1 = saturate((ai_mask.Sample(maskSampler, v_in.uv + dx).r - low) / (high - low));
+            float a2 = saturate((ai_mask.Sample(maskSampler, v_in.uv - dx).r - low) / (high - low));
+            float a3 = saturate((ai_mask.Sample(maskSampler, v_in.uv + dy).r - low) / (high - low));
+            float a4 = saturate((ai_mask.Sample(maskSampler, v_in.uv - dy).r - low) / (high - low));
+            float a5 = saturate((ai_mask.Sample(maskSampler, v_in.uv + dx + dy).r - low) / (high - low));
+            float a6 = saturate((ai_mask.Sample(maskSampler, v_in.uv - dx + dy).r - low) / (high - low));
+            float a7 = saturate((ai_mask.Sample(maskSampler, v_in.uv + dx - dy).r - low) / (high - low));
+            float a8 = saturate((ai_mask.Sample(maskSampler, v_in.uv - dx - dy).r - low) / (high - low));
+            float smoothAlpha = (4.0 * alpha + 2.0 * (a1 + a2 + a3 + a4)
+                                  + a5 + a6 + a7 + a8) / 16.0;
+            alpha = lerp(alpha, smoothAlpha, featherStrength);
+        }
+        rgba.a *= alpha;
     } else if (mask_enabled) {
         // The native matte is 256x256. Sample a local 3x3 neighborhood
         // at mask-pixel spacing, then use the full-resolution camera color
