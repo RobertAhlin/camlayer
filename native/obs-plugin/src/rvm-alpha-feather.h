@@ -11,14 +11,14 @@ class RvmAlphaFeather {
 public:
     static constexpr int side = 256;
     static constexpr int pixels = side * side;
-    static constexpr int max_radius = 48;
+    static constexpr int max_radius = 64;
 
     // width is in 256x256 mask pixels. Softness 0 bypasses feather entirely.
     // Preserve fractional RVM opacity instead of thresholding a silhouette.
     void apply(float *alpha, float softness, float width, float inner_share) noexcept
     {
         if (!alpha || softness <= 0.001f || width <= 0.001f) return;
-        softness = std::clamp(softness, 0.0f, 5.0f);
+        softness = std::clamp(softness, 0.0f, 10.0f);
         width = std::clamp(width, 0.0f, 20.0f);
         inner_share = std::clamp(inner_share, 0.0f, 1.0f);
 
@@ -26,7 +26,7 @@ public:
         // sigma instead of merely blending a blurred matte with the original.
         // This eliminates the sharp inner contour caused by alpha mixing.
         const float sigma = std::clamp(width * (0.12f + 0.19f * softness),
-                                       0.05f, 12.0f);
+                                       0.05f, 18.0f);
         const int radius = std::min(max_radius,
                                     static_cast<int>(std::ceil(3.5f * sigma)));
         float weights[max_radius + 1] = {};
