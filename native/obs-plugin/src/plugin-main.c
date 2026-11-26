@@ -35,10 +35,10 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_RVM_CLEANUP "rvm_cleanup"
 #define SETTING_RVM_STABILITY "rvm_stability"
 #define SETTING_RVM_FOLLOW "rvm_follow_speed"
-// New keys prevent migration of obsolete Gaussian-blend control values.
-#define SETTING_RVM_FEATHER "rvm_sdf_softness"
-#define SETTING_RVM_FEATHER_WIDTH "rvm_sdf_width"
-#define SETTING_RVM_INNER "rvm_sdf_inner_share"
+// New keys prevent importing the failed SDF settings into Gaussian v3.
+#define SETTING_RVM_FEATHER "rvm_gauss_v3_softness"
+#define SETTING_RVM_FEATHER_WIDTH "rvm_gauss_v3_width"
+#define SETTING_RVM_INNER "rvm_gauss_v3_inner_share"
 #define CAMLAYER_MASK_SIDE 256
 /* Capture rate follows the control: 10 to 30 requested frames per second. */
 
@@ -277,7 +277,7 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_double(settings, SETTING_RVM_STABILITY, 0.0);
     obs_data_set_default_double(settings, SETTING_RVM_FOLLOW, 1.0);
     obs_data_set_default_double(settings, SETTING_RVM_FEATHER, 0.0);
-    obs_data_set_default_double(settings, SETTING_RVM_FEATHER_WIDTH, 8.0);
+    obs_data_set_default_double(settings, SETTING_RVM_FEATHER_WIDTH, 4.0);
     obs_data_set_default_double(settings, SETTING_RVM_INNER, 0.75);
     obs_data_set_default_bool(settings, SETTING_DIAGNOSTIC, false);
     obs_data_set_default_int(settings, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
