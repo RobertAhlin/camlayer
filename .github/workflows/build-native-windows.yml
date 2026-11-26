@@ -73,7 +73,7 @@ jobs:
           Copy-Item 'camlayer/native/obs-plugin/src/ai-engine.h' 'obs-template/src/ai-engine.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-worker.cpp' 'obs-template/src/ai-worker.cpp' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-worker.h' 'obs-template/src/ai-worker.h' -Force
-          Copy-Item 'camlayer/native/obs-plugin/src/rvm-distance-feather.h' 'obs-template/src/rvm-distance-feather.h' -Force
+          Copy-Item 'camlayer/native/obs-plugin/src/rvm-alpha-feather.h' 'obs-template/src/rvm-alpha-feather.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/rvm-engine.cpp' 'obs-template/src/rvm-engine.cpp' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/rvm-engine.h' 'obs-template/src/rvm-engine.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-mask-refine.h' 'obs-template/src/ai-mask-refine.h' -Force
