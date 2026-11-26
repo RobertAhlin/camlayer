@@ -347,13 +347,13 @@ static obs_properties_t *camlayer_properties(void *data)
     obs_properties_add_float_slider(props, SETTING_RVM_WHITE,
                                     obs_module_text("CamLayer.RVMWhite"), 0.1, 1.0, 0.01);
     obs_properties_add_float_slider(props, SETTING_RVM_CLEANUP,
-                                    obs_module_text("CamLayer.RVMCleanup"), 0.0, 1.0, 0.05);
+                                    obs_module_text("CamLayer.RVMCleanup"), 0.0, 2.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_RVM_STABILITY,
-                                    obs_module_text("CamLayer.RVMStability"), 0.0, 2.0, 0.05);
+                                    obs_module_text("CamLayer.RVMStability"), 0.0, 4.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_RVM_FOLLOW,
-                                    obs_module_text("CamLayer.RVMFollow"), 0.0, 5.0, 0.05);
+                                    obs_module_text("CamLayer.RVMFollow"), 0.0, 10.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_RVM_FEATHER,
-                                    obs_module_text("CamLayer.RVMFeather"), 0.0, 5.0, 0.05);
+                                    obs_module_text("CamLayer.RVMFeather"), 0.0, 10.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_RVM_FEATHER_WIDTH,
                                     obs_module_text("CamLayer.RVMFeatherWidth"), 0.0, 20.0, 0.25);
     obs_properties_add_float_slider(props, SETTING_RVM_INNER,
@@ -420,6 +420,8 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
      */
     const double follow = fmax(0.0, fmin(5.0,
         filter->engine == CAMLAYER_AI_RVM ? filter->rvm_follow : filter->follow_speed));
+    // Keep requests capped at 60 Hz even when RVM follow is set above 5.
+    // The camera itself may provide fewer frames (e.g. 30 FPS).
     const uint64_t capture_interval = (uint64_t)(100000000.0 / (1.0 + follow));
     if (now - filter->last_capture < capture_interval)
         return;
