@@ -35,8 +35,10 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_RVM_CLEANUP "rvm_cleanup"
 #define SETTING_RVM_STABILITY "rvm_stability"
 #define SETTING_RVM_FOLLOW "rvm_follow_speed"
-#define SETTING_RVM_FEATHER "rvm_edge_feather"
-#define SETTING_RVM_FEATHER_WIDTH "rvm_edge_feather_width"
+// New keys prevent migration of obsolete Gaussian-blend control values.
+#define SETTING_RVM_FEATHER "rvm_sdf_softness"
+#define SETTING_RVM_FEATHER_WIDTH "rvm_sdf_width"
+#define SETTING_RVM_INNER "rvm_sdf_inner_share"
 #define CAMLAYER_MASK_SIDE 256
 /* Capture rate follows the control: 10 to 30 requested frames per second. */
 
@@ -63,7 +65,7 @@ struct camlayer_filter {
     double stability;
     double follow_speed;
     double rvm_black, rvm_white, rvm_cleanup, rvm_stability, rvm_follow;
-    double rvm_feather, rvm_feather_width;
+    double rvm_feather, rvm_feather_width, rvm_inner_share;
     bool diagnostic;
     enum camlayer_ai_engine engine;
     camlayer_ai_session *ai;
@@ -80,8 +82,7 @@ struct camlayer_filter {
     gs_eparam_t *softness_parameter;
     gs_eparam_t *feather_parameter;
     gs_eparam_t *detail_parameter;
-    gs_eparam_t *rvm_mode_parameter, *rvm_black_parameter, *rvm_white_parameter;
-    gs_eparam_t *rvm_feather_parameter, *rvm_feather_width_parameter;
+    gs_eparam_t *rvm_mode_parameter;
     bool staging_ready;
     bool mask_ready;
     uint64_t last_capture;
@@ -118,6 +119,7 @@ static void camlayer_update(void *data, obs_data_t *settings)
     filter->rvm_follow = obs_data_get_double(settings, SETTING_RVM_FOLLOW);
     filter->rvm_feather = obs_data_get_double(settings, SETTING_RVM_FEATHER);
     filter->rvm_feather_width = obs_data_get_double(settings, SETTING_RVM_FEATHER_WIDTH);
+    filter->rvm_inner_share = obs_data_get_double(settings, SETTING_RVM_INNER);
     filter->diagnostic = obs_data_get_bool(settings, SETTING_DIAGNOSTIC);
     const enum camlayer_ai_engine selected =
         (enum camlayer_ai_engine)obs_data_get_int(settings, SETTING_AI_ENGINE);
@@ -128,6 +130,11 @@ static void camlayer_update(void *data, obs_data_t *settings)
              camlayer_engine_name(next_engine));
     }
     filter->engine = next_engine;
+    if (filter->worker)
+        camlayer_worker_set_rvm_feather(filter->worker,
+            (float)filter->rvm_black, (float)filter->rvm_white,
+            (float)filter->rvm_feather, (float)filter->rvm_feather_width,
+            (float)filter->rvm_inner_share);
     if (filter->worker)
         camlayer_worker_set_refinement(filter->worker,
             next_engine == CAMLAYER_AI_RVM ? 0.50f : (float)filter->threshold,
@@ -164,6 +171,11 @@ static void camlayer_update(void *data, obs_data_t *settings)
         }
         else
             blog(LOG_WARNING, "[CamLayer] Could not create live inference worker");
+        if (filter->worker)
+            camlayer_worker_set_rvm_feather(filter->worker,
+                (float)filter->rvm_black, (float)filter->rvm_white,
+                (float)filter->rvm_feather, (float)filter->rvm_feather_width,
+                (float)filter->rvm_inner_share);
         if (filter->worker)
             camlayer_worker_set_refinement(filter->worker,
                                            next_engine == CAMLAYER_AI_RVM ? 0.50f : (float)filter->threshold,
@@ -233,10 +245,7 @@ static void *camlayer_create(obs_data_t *settings, obs_source_t *source)
         filter->detail_parameter =
             gs_effect_get_param_by_name(filter->alpha_effect, "edge_detail");
         filter->rvm_mode_parameter = gs_effect_get_param_by_name(filter->alpha_effect, "rvm_mode");
-        filter->rvm_black_parameter = gs_effect_get_param_by_name(filter->alpha_effect, "rvm_alpha_black");
-        filter->rvm_white_parameter = gs_effect_get_param_by_name(filter->alpha_effect, "rvm_alpha_white");
-        filter->rvm_feather_parameter = gs_effect_get_param_by_name(filter->alpha_effect, "rvm_edge_feather");
-        filter->rvm_feather_width_parameter = gs_effect_get_param_by_name(filter->alpha_effect, "rvm_edge_feather_width");
+
     }
     obs_leave_graphics();
 
@@ -268,7 +277,8 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_double(settings, SETTING_RVM_STABILITY, 0.0);
     obs_data_set_default_double(settings, SETTING_RVM_FOLLOW, 1.0);
     obs_data_set_default_double(settings, SETTING_RVM_FEATHER, 0.0);
-    obs_data_set_default_double(settings, SETTING_RVM_FEATHER_WIDTH, 0.75);
+    obs_data_set_default_double(settings, SETTING_RVM_FEATHER_WIDTH, 8.0);
+    obs_data_set_default_double(settings, SETTING_RVM_INNER, 0.75);
     obs_data_set_default_bool(settings, SETTING_DIAGNOSTIC, false);
     obs_data_set_default_int(settings, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
     obs_data_set_default_bool(settings, SETTING_RUNTIME_TEST, false);
@@ -286,7 +296,8 @@ static bool camlayer_engine_modified(obs_properties_t *props, obs_property_t *pr
                            SETTING_FOLLOW_SPEED};
     const char *rvm_props[] = {SETTING_RVM_BLACK, SETTING_RVM_WHITE, SETTING_RVM_CLEANUP,
                                SETTING_RVM_STABILITY, SETTING_RVM_FOLLOW,
-                               SETTING_RVM_FEATHER, SETTING_RVM_FEATHER_WIDTH};
+                               SETTING_RVM_FEATHER, SETTING_RVM_FEATHER_WIDTH,
+                               SETTING_RVM_INNER};
     for (size_t i = 0; i < sizeof(media) / sizeof(media[0]); ++i)
         obs_property_set_visible(obs_properties_get(props, media[i]), !rvm);
     for (size_t i = 0; i < sizeof(rvm_props) / sizeof(rvm_props[0]); ++i)
@@ -342,9 +353,11 @@ static obs_properties_t *camlayer_properties(void *data)
     obs_properties_add_float_slider(props, SETTING_RVM_FOLLOW,
                                     obs_module_text("CamLayer.RVMFollow"), 0.0, 5.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_RVM_FEATHER,
-                                    obs_module_text("CamLayer.RVMFeather"), 0.0, 1.0, 0.01);
+                                    obs_module_text("CamLayer.RVMFeather"), 0.0, 5.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_RVM_FEATHER_WIDTH,
-                                    obs_module_text("CamLayer.RVMFeatherWidth"), 0.0, 3.0, 0.05);
+                                    obs_module_text("CamLayer.RVMFeatherWidth"), 0.0, 20.0, 0.25);
+    obs_properties_add_float_slider(props, SETTING_RVM_INNER,
+                                    obs_module_text("CamLayer.RVMInner"), 0.0, 1.0, 0.05);
     if (data) {
         struct camlayer_filter *filter = data;
         obs_data_t *current = obs_source_get_settings(filter->source);
@@ -500,14 +513,6 @@ static void camlayer_render(void *data, gs_effect_t *unused)
         gs_effect_set_bool(filter->mask_enabled_parameter, apply_mask);
     if (filter->rvm_mode_parameter)
         gs_effect_set_bool(filter->rvm_mode_parameter, filter->engine == CAMLAYER_AI_RVM);
-    if (filter->rvm_black_parameter)
-        gs_effect_set_float(filter->rvm_black_parameter, (float)filter->rvm_black);
-    if (filter->rvm_white_parameter)
-        gs_effect_set_float(filter->rvm_white_parameter, (float)filter->rvm_white);
-    if (filter->rvm_feather_parameter)
-        gs_effect_set_float(filter->rvm_feather_parameter, (float)filter->rvm_feather);
-    if (filter->rvm_feather_width_parameter)
-        gs_effect_set_float(filter->rvm_feather_width_parameter, (float)filter->rvm_feather_width);
     if (filter->threshold_parameter)
         gs_effect_set_float(filter->threshold_parameter, (float)filter->threshold);
     if (filter->softness_parameter)
