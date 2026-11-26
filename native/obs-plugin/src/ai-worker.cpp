@@ -5,7 +5,7 @@
 #include "ai-engine.h"
 #include "rvm-engine.h"
 #include "ai-mask-refine.h"
-#include "rvm-distance-feather.h"
+#include "rvm-alpha-feather.h"
 #include <algorithm>
 #include <array>
 #include <condition_variable>
@@ -77,9 +77,9 @@ static void run_worker(camlayer_worker *worker) noexcept
     // Keep the large temporal mask buffers off the small Windows thread stack.
     std::unique_ptr<camlayer::MaskRefiner> refiner(
         new (std::nothrow) camlayer::MaskRefiner());
-    std::unique_ptr<camlayer::RvmDistanceFeather> sdf;
-    if (rvm) sdf.reset(new (std::nothrow) camlayer::RvmDistanceFeather());
-    if (!refiner || (rvm && !sdf)) {
+    std::unique_ptr<camlayer::RvmAlphaFeather> feather;
+    if (rvm) feather.reset(new (std::nothrow) camlayer::RvmAlphaFeather());
+    if (!refiner || (rvm && !feather)) {
         camlayer_ai_close(media);
         camlayer_rvm_close(rvm);
         std::lock_guard<std::mutex> lock(worker->mutex);
@@ -135,14 +135,14 @@ static void run_worker(camlayer_worker *worker) noexcept
                 if (cleanup > 0.0f || stability > 0.0f)
                     refiner->process(computed.data(), cleanup, stability,
                                      follow_speed, timestamp);
-                // Apply black/white point before computing the 0.5 contour.
+                // Remap RVM alpha but retain fractional contour detail for Gaussian feather.
                 // With softness zero this matches the previous RVM GPU remap.
                 const float span = std::max(0.01f, rvm_white - rvm_black);
                 for (float &a : computed) {
                     a = std::clamp((std::isfinite(a) ? a : 0.0f) - rvm_black,
                                    0.0f, span) / span;
                 }
-                sdf->apply(computed.data(), rvm_softness, rvm_width,
+                feather->apply(computed.data(), rvm_softness, rvm_width,
                            rvm_inner_share);
             } else {
                 refiner->process(computed.data(), cleanup, stability, follow_speed, timestamp);
