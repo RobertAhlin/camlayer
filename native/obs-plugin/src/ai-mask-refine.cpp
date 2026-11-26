@@ -11,9 +11,11 @@ void MaskRefiner::reset() noexcept {
 void MaskRefiner::process(float *mask, float cleanup, float stability,
                           float follow_speed, uint64_t timestamp) noexcept {
     if (!mask) return;
-    cleanup = std::clamp(cleanup, 0.0f, 1.0f);
-    stability = std::clamp(stability, 0.0f, 2.0f);
-    follow_speed = std::clamp(follow_speed, 0.0f, 5.0f);
+    // RVM can pass expanded ranges. MediaPipe's controls remain capped by
+    // ai-worker.cpp. Keep smoothing bounded to avoid negative alpha weights.
+    cleanup = std::clamp(cleanup, 0.0f, 2.0f);
+    stability = std::clamp(stability, 0.0f, 4.0f);
+    follow_speed = std::clamp(follow_speed, 0.0f, 10.0f);
     // Preserve exact original values when cleanup is zero.
     if (cleanup > 0.0f) {
         for (int y = 0; y < kSide; ++y) {
@@ -44,7 +46,11 @@ void MaskRefiner::process(float *mask, float cleanup, float stability,
     const bool continuous = has_previous && timestamp > last_timestamp &&
         (timestamp - last_timestamp) <= 500000000ULL;
     if (stability > 0.0f && continuous) {
-        const float history = 0.35f * stability; // at most 70% history
+        // Preserve the existing response through 2.0, then increase gradually.
+        // Never exceed 90% history or invert the current-frame contribution.
+        const float history = stability <= 2.0f
+            ? 0.35f * stability
+            : 0.70f + 0.20f * (1.0f - std::exp(-(stability - 2.0f)));
         for (int i = 0; i < kPixels; ++i) {
             const float current = std::clamp(mask[i], 0.0f, 1.0f);
             const float prior = previous[i];
