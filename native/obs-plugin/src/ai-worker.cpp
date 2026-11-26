@@ -259,9 +259,10 @@ extern "C" void camlayer_worker_set_refinement(
     std::lock_guard<std::mutex> lock(worker->mutex);
     worker->threshold = std::clamp(threshold, 0.15f, 0.85f);
     worker->softness = std::clamp(softness, -2.0f, 2.0f);
-    worker->cleanup = std::clamp(cleanup, 0.0f, 1.0f);
-    worker->stability = std::clamp(stability, 0.0f, 2.0f);
-    worker->follow_speed = std::clamp(follow_speed, 0.0f, 5.0f);
+    const bool rvm = worker->backend == CAMLAYER_BACKEND_RVM;
+    worker->cleanup = std::clamp(cleanup, 0.0f, rvm ? 2.0f : 1.0f);
+    worker->stability = std::clamp(stability, 0.0f, rvm ? 4.0f : 2.0f);
+    worker->follow_speed = std::clamp(follow_speed, 0.0f, rvm ? 10.0f : 5.0f);
 }
 
 extern "C" void camlayer_worker_reset_refinement(camlayer_worker *worker)
@@ -283,7 +284,7 @@ extern "C" void camlayer_worker_set_rvm_feather(
     worker->rvm_black = std::clamp(black, 0.0f, 0.9f);
     worker->rvm_white = std::max(worker->rvm_black + 0.01f,
                                  std::clamp(white, 0.1f, 1.0f));
-    worker->rvm_softness = std::clamp(softness, 0.0f, 5.0f);
+    worker->rvm_softness = std::clamp(softness, 0.0f, 10.0f);
     worker->rvm_width = std::clamp(width, 0.0f, 20.0f);
     worker->rvm_inner_share = std::clamp(inner_share, 0.0f, 1.0f);
 }
