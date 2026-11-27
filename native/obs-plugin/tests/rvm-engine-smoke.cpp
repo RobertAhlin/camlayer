@@ -53,7 +53,7 @@ int main(int argc, char **argv)
     }
     // Verify that model inference returns an actual higher-resolution matte.
     // Do not upsample a 256 mask and mistake it for additional model detail.
-    for (const int side : {384, 512}) {
+    for (const int side : {384, 512, 768, 1024}) {
         std::vector<uint8_t> frame(size_t(side) * side * 4, 128);
         std::vector<float> high_alpha(size_t(side) * side);
         for (size_t i = 3; i < frame.size(); i += 4) frame[i] = 255;
@@ -70,6 +70,6 @@ int main(int argc, char **argv)
             }
     }
     camlayer_rvm_close(model);
-    std::cout << "RVM ONNX 256, 384 and 512 recurrent inference: PASS\\n";
+    std::cout << "RVM ONNX 256, 384, 512, 768 and 1024 recurrent inference: PASS\\n";
     return 0;
 }
