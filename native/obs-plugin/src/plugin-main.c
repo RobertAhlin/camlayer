@@ -42,7 +42,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_RVM_EDGE_HANDLING "rvm_edge_handling_enabled"
 #define SETTING_RVM_RESOLUTION "rvm_mask_resolution"
 #define CAMLAYER_MASK_SIDE 256
-#define CAMLAYER_MASK_MAX_SIDE 512
+#define CAMLAYER_MASK_MAX_SIDE 1024
 /* Capture rate follows the control: 10 to 30 requested frames per second. */
 
 /* MediaPipe provides experimental live inference; RVM remains unavailable. */
@@ -128,7 +128,8 @@ static void camlayer_update(void *data, obs_data_t *settings)
     filter->rvm_inner_share = obs_data_get_double(settings, SETTING_RVM_INNER);
     filter->rvm_edge_handling = obs_data_get_bool(settings, SETTING_RVM_EDGE_HANDLING);
     const int configured_side = (int)obs_data_get_int(settings, SETTING_RVM_RESOLUTION);
-    const uint32_t selected_side = configured_side == 384 || configured_side == 512
+    const uint32_t selected_side = configured_side == 384 || configured_side == 512 ||
+        configured_side == 768 || configured_side == 1024
         ? (uint32_t)configured_side : CAMLAYER_MASK_SIDE;
     filter->diagnostic = obs_data_get_bool(settings, SETTING_DIAGNOSTIC);
     const enum camlayer_ai_engine selected =
@@ -371,7 +372,9 @@ static obs_properties_t *camlayer_properties(void *data)
         OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
     obs_property_list_add_int(resolution, "256 x 256 (reference)", 256);
     obs_property_list_add_int(resolution, "384 x 384 (balanced)", 384);
-    obs_property_list_add_int(resolution, "512 x 512 (quality test)", 512);
+    obs_property_list_add_int(resolution, "512 x 512 (high quality)", 512);
+    obs_property_list_add_int(resolution, "768 x 768 (experimental)", 768);
+    obs_property_list_add_int(resolution, "1024 x 1024 (very experimental / slow)", 1024);
     obs_properties_add_float_slider(props, SETTING_RVM_BLACK,
                                     obs_module_text("CamLayer.RVMBlack"), 0.0, 0.9, 0.01);
     obs_properties_add_float_slider(props, SETTING_RVM_WHITE,
