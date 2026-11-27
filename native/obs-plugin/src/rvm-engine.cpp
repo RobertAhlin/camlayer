@@ -122,7 +122,7 @@ extern "C" int camlayer_rvm_segment_bgra(
     uint32_t stride, float *alpha, size_t capacity, uint32_t side)
 {
     if (!session || !bgra || !alpha ||
-        (side != 256 && side != 384 && side != 512) ||
+        (side != 256 && side != 384 && side != 512 && side != 768 && side != 1024) ||
         stride < side * 4 || capacity < size_t(side) * side) return 0;
     if (session->frame_side != side) {
         session->frame_side = side;
