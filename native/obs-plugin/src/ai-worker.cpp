@@ -18,13 +18,13 @@
 #include <vector>
 
 namespace {
-constexpr uint32_t kMaskSide = 256;
-constexpr size_t kMaskPixels = size_t(kMaskSide) * kMaskSide;
-constexpr size_t kPackedBytes = kMaskPixels * 4;
+constexpr uint32_t kMediaPipeSide = 256;
 }
 
 struct camlayer_worker {
     int backend;
+    const uint32_t side;
+    const size_t pixels;
     std::string model_path;
     std::thread thread;
     std::mutex mutex;
@@ -36,7 +36,7 @@ struct camlayer_worker {
     uint64_t pending_timestamp = 0;
     uint64_t completed_timestamp = 0;
     std::vector<uint8_t> queued;
-    std::array<float, kMaskPixels> result{};
+    std::vector<float> result;
     float threshold = 0.50f;
     float softness = 0.0f;
     float cleanup = 0.0f;
@@ -49,8 +49,10 @@ struct camlayer_worker {
     float rvm_inner_share = 0.75f;
     uint64_t reset_epoch = 0;
 
-    camlayer_worker(int engine, const char *path)
-        : backend(engine), model_path(path ? path : ""), queued(kPackedBytes) {}
+    camlayer_worker(int engine, const char *path, uint32_t mask_side)
+        : backend(engine), side(engine == CAMLAYER_BACKEND_RVM ? mask_side : kMediaPipeSide),
+          pixels(size_t(side) * side), model_path(path ? path : ""),
+          queued(pixels * 4), result(pixels) {}
 };
 
 static void run_worker(camlayer_worker *worker) noexcept
@@ -72,8 +74,8 @@ static void run_worker(camlayer_worker *worker) noexcept
         std::lock_guard<std::mutex> lock(worker->mutex);
         worker->status = CAMLAYER_WORKER_READY;
     }
-    std::vector<uint8_t> local(kPackedBytes);
-    std::array<float, kMaskPixels> computed{};
+    std::vector<uint8_t> local(worker->pixels * 4);
+    std::vector<float> computed(worker->pixels);
     // Keep the large temporal mask buffers off the small Windows thread stack.
     std::unique_ptr<camlayer::MaskRefiner> refiner(
         new (std::nothrow) camlayer::MaskRefiner());
@@ -117,10 +119,10 @@ static void run_worker(camlayer_worker *worker) noexcept
             worker->pending = false;
         }
         const int ok = media
-            ? camlayer_ai_segment_bgra(media, local.data(), kMaskSide, kMaskSide,
-                                        kMaskSide * 4, computed.data(), computed.size())
-            : camlayer_rvm_segment_bgra(rvm, local.data(), kMaskSide * 4,
-                                        computed.data(), computed.size());
+            ? camlayer_ai_segment_bgra(media, local.data(), kMediaPipeSide, kMediaPipeSide,
+                                        kMediaPipeSide * 4, computed.data(), computed.size())
+            : camlayer_rvm_segment_bgra(rvm, local.data(), worker->side * 4,
+                                        computed.data(), computed.size(), worker->side);
         if (ok) {
             if (epoch != applied_epoch) {
                 refiner->reset();
@@ -134,7 +136,7 @@ static void run_worker(camlayer_worker *worker) noexcept
             if (rvm) {
                 if (cleanup > 0.0f || stability > 0.0f)
                     refiner->process(computed.data(), cleanup, stability,
-                                     follow_speed, timestamp);
+                                     follow_speed, timestamp, int(worker->side));
                 // Remap RVM alpha but retain fractional contour detail for Gaussian feather.
                 // With softness zero this matches the previous RVM GPU remap.
                 const float span = std::max(0.01f, rvm_white - rvm_black);
@@ -143,7 +145,7 @@ static void run_worker(camlayer_worker *worker) noexcept
                                    0.0f, span) / span;
                 }
                 feather->apply(computed.data(), rvm_softness, rvm_width,
-                           rvm_inner_share);
+                               rvm_inner_share, int(worker->side));
             } else {
                 refiner->process(computed.data(), cleanup, stability, follow_speed, timestamp);
                 refiner->finish_alpha(computed.data(), threshold, softness);
@@ -154,7 +156,7 @@ static void run_worker(camlayer_worker *worker) noexcept
             // heavy load would freeze the visible silhouette indefinitely.
             // Only discard results from a reset/previous camera generation.
             if (!worker->stop && epoch == worker->reset_epoch) {
-                worker->result = computed;
+                worker->result.swap(computed);
                 worker->completed_timestamp = timestamp;
                 worker->has_result = true;
             }
@@ -168,14 +170,17 @@ static void run_worker(camlayer_worker *worker) noexcept
     camlayer_rvm_close(rvm);
 }
 
-extern "C" camlayer_worker *camlayer_worker_create(int backend, const char *model_path)
+extern "C" camlayer_worker *camlayer_worker_create(int backend, const char *model_path,
+                                                       uint32_t mask_side)
 {
     if (backend != CAMLAYER_BACKEND_MEDIAPIPE && backend != CAMLAYER_BACKEND_RVM)
         return nullptr;
-    if (!model_path || !*model_path)
+    if (!model_path || !*model_path ||
+        (backend == CAMLAYER_BACKEND_RVM &&
+         mask_side != 256 && mask_side != 384 && mask_side != 512))
         return nullptr;
     try {
-        auto *worker = new camlayer_worker(backend, model_path);
+        auto *worker = new camlayer_worker(backend, model_path, mask_side);
         try {
             worker->thread = std::thread(run_worker, worker);
         } catch (...) {
@@ -211,20 +216,21 @@ extern "C" int camlayer_worker_submit(
 
     // Shrink in the submitting thread, without model inference or allocating
     // a full-resolution frame. Work is capped to 256x256 pixels.
-    std::array<uint8_t, kPackedBytes> reduced;
-    for (uint32_t y = 0; y < kMaskSide; ++y) {
-        const uint32_t sy = uint32_t(uint64_t(y) * height / kMaskSide);
+    std::vector<uint8_t> reduced(worker->pixels * 4);
+    const uint32_t side = worker->side;
+    for (uint32_t y = 0; y < side; ++y) {
+        const uint32_t sy = uint32_t(uint64_t(y) * height / side);
         const uint8_t *row = bgra + size_t(sy) * stride;
-        for (uint32_t x = 0; x < kMaskSide; ++x) {
-            const uint32_t sx = uint32_t(uint64_t(x) * width / kMaskSide);
-            std::memcpy(reduced.data() + (size_t(y) * kMaskSide + x) * 4,
+        for (uint32_t x = 0; x < side; ++x) {
+            const uint32_t sx = uint32_t(uint64_t(x) * width / side);
+            std::memcpy(reduced.data() + (size_t(y) * side + x) * 4,
                         row + size_t(sx) * 4, 4);
         }
     }
     {
         std::lock_guard<std::mutex> lock(worker->mutex);
         if (worker->stop || worker->status != CAMLAYER_WORKER_READY) return 0;
-        std::memcpy(worker->queued.data(), reduced.data(), kPackedBytes);
+        std::memcpy(worker->queued.data(), reduced.data(), worker->pixels * 4);
         worker->pending_timestamp = timestamp;
         worker->pending = true;
     }
@@ -235,10 +241,10 @@ extern "C" int camlayer_worker_submit(
 extern "C" int camlayer_worker_take_mask(
     camlayer_worker *worker, float *dst, size_t capacity, uint64_t *timestamp)
 {
-    if (!worker || !dst || capacity < kMaskPixels) return 0;
+    if (!worker || !dst || capacity < worker->pixels) return 0;
     std::lock_guard<std::mutex> lock(worker->mutex);
     if (!worker->has_result) return 0;
-    std::memcpy(dst, worker->result.data(), kMaskPixels * sizeof(float));
+    std::memcpy(dst, worker->result.data(), worker->pixels * sizeof(float));
     if (timestamp) *timestamp = worker->completed_timestamp;
     worker->has_result = false;
     return 1;
