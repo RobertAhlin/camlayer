@@ -11,9 +11,9 @@ constexpr int kPixels = kSide * kSide;
 
 struct MaskRefiner {
     std::vector<float> previous = std::vector<float>(kPixels);
-    std::array<float, kPixels> scratch{};
-    std::array<float, kPixels> morph_row{};
-    std::array<float, kPixels> alpha_buffer{};
+    std::vector<float> scratch = std::vector<float>(kPixels);
+    std::vector<float> morph_row = std::vector<float>(kPixels);
+    std::vector<float> alpha_buffer = std::vector<float>(kPixels);
     int side = 256;
     bool has_previous = false;
     uint64_t last_timestamp = 0;
