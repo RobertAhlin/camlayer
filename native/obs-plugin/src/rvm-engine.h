@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 typedef struct camlayer_rvm_session camlayer_rvm_session;
-// Official RVM MobileNetV3 FP32 ONNX model. Supports 256, 384 and 512 square
+// Official RVM MobileNetV3 FP32 ONNX model. Supports 256, 384, 512, 768 and 1024 square
 // input/output masks. Recurrent states belong exclusively to this session.
 camlayer_rvm_session *camlayer_rvm_open(const char *model_path,
                                         char *error, size_t error_capacity);
