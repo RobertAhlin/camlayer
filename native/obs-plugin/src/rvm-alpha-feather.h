@@ -14,7 +14,7 @@ public:
     static constexpr int pixels = side * side;
     static constexpr int max_radius = 64;
 
-    // width is in 256x256 mask pixels. Softness 0 bypasses feather entirely.
+    // width is in selected mask pixels (256..1024). Softness 0 bypasses feather.
     // Preserve fractional RVM opacity instead of thresholding a silhouette.
     void apply(float *alpha, float softness, float width, float inner_share, int side = 256)
     {
