@@ -2,6 +2,17 @@ name: Build CamLayer OBS plugin (Windows)
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_preview_release:
+        description: 'Publish this successful build as a public prerelease (requires legal review)'
+        type: boolean
+        required: false
+        default: false
+      redistribution_approved:
+        description: 'I verified rights to redistribute both ONNX model weights and all bundled binaries, and reviewed third-party notices'
+        type: boolean
+        required: false
+        default: false
   push:
     paths:
       - 'native/obs-plugin/**'
@@ -73,6 +84,7 @@ jobs:
           Copy-Item 'camlayer/native/obs-plugin/src/ai-engine.h' 'obs-template/src/ai-engine.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-worker.cpp' 'obs-template/src/ai-worker.cpp' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-worker.h' 'obs-template/src/ai-worker.h' -Force
+          Copy-Item 'camlayer/native/obs-plugin/src/rvm-alpha-feather.h' 'obs-template/src/rvm-alpha-feather.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/rvm-engine.cpp' 'obs-template/src/rvm-engine.cpp' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/rvm-engine.h' 'obs-template/src/rvm-engine.h' -Force
           Copy-Item 'camlayer/native/obs-plugin/src/ai-mask-refine.h' 'obs-template/src/ai-mask-refine.h' -Force
@@ -144,6 +156,20 @@ jobs:
           & ./camlayer-native-smoke.exe 'deps/selfie_segmentation.onnx'
           if ($LASTEXITCODE -ne 0) { throw "ONNX engine smoke test failed: $LASTEXITCODE" }
 
+      - name: Smoke-test continuous RVM Gaussian feather
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsPath = & $vswhere -latest -products '*' -property installationPath
+          if (-not $vsPath) { throw 'Visual Studio build tools unavailable.' }
+          $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmd = "`"$vcvars`" && cl /nologo /EHsc /std:c++17 /O2 camlayer/native/obs-plugin/tests/rvm-alpha-feather-smoke.cpp /Fe:camlayer-rvm-feather-smoke.exe"
+          cmd /c $cmd
+          if ($LASTEXITCODE -ne 0) { throw "RVM feather test compile failed: $LASTEXITCODE" }
+          & ./camlayer-rvm-feather-smoke.exe
+          if ($LASTEXITCODE -ne 0) { throw "RVM feather test failed: $LASTEXITCODE" }
+
       - name: Smoke-test RVM model and recurrent state with synthetic frames
         shell: pwsh
         run: |
@@ -192,3 +218,50 @@ jobs:
           path: obs-template/release/RelWithDebInfo/
           if-no-files-found: error
           retention-days: 14
+
+  publish-preview:
+    name: Publish Windows prerelease after approval
+    needs: windows-x64
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_preview_release && inputs.redistribution_approved }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Check out source and license documents
+        uses: actions/checkout@v4
+
+      - name: Download successful build
+        uses: actions/download-artifact@v4
+        with:
+          name: camlayer-obs-windows-x64-bootstrap
+          path: dist
+
+      - name: Verify release contents and package portable ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="dist/camlayer-obs"
+          test -f "$root/bin/64bit/camlayer-obs.dll"
+          test -f "$root/bin/64bit/onnxruntime.dll"
+          test -f "$root/data/models/selfie_segmentation.onnx"
+          test -f "$root/data/models/rvm_mobilenetv3_fp32.onnx"
+          cp LICENSE "$root/LICENSE.txt"
+          cp THIRD_PARTY_NOTICES.md "$root/THIRD_PARTY_NOTICES.md"
+          curl --fail --location --silent --show-error \
+            https://raw.githubusercontent.com/microsoft/onnxruntime/v1.24.2/LICENSE \
+            --output "$root/ONNXRUNTIME-LICENSE.txt"
+          test -s "$root/ONNXRUNTIME-LICENSE.txt"
+          cp native/obs-plugin/README.md "$root/INSTALL-AND-TEST.md"
+          (cd dist && zip -qr ../CamLayer-OBS-Windows-x64-preview.zip camlayer-obs)
+          sha256sum CamLayer-OBS-Windows-x64-preview.zip > SHA256SUMS.txt
+
+      - name: Create public GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="preview-${{ github.run_number }}"
+          gh release create "$tag"             CamLayer-OBS-Windows-x64-preview.zip SHA256SUMS.txt             --target "$GITHUB_SHA"             --title "CamLayer Windows experimental preview (build ${{ github.run_number }})"             --prerelease             --notes "Experimental CamLayer OBS video filter for Windows x64. Includes native MediaPipe and RVM (256, 384, 512, 768, 1024). 512 is currently the preferred quality/performance compromise on the tested CPU; 768 and 1024 can lag heavily during motion. Extract ZIP and copy the camlayer-obs folder to the OBS plugin directory; see INSTALL-AND-TEST.md. This is an unsigned test build, not a production release. Source code and third-party notices are attached via the release tag and packaged documentation. Model redistribution review has been explicitly acknowledged by the publisher."

@@ -31,7 +31,7 @@ int main(int argc, char **argv)
     // the next step, rather than merely returning a first-frame alpha.
     for (int frame = 0; frame < 2; ++frame) {
         if (!camlayer_rvm_segment_bgra(model, bgra.data(), 256 * 4,
-                                        alpha.data(), alpha.size())) {
+                                        alpha.data(), alpha.size(), 256)) {
             std::cerr << "RVM ONNX frame " << frame << " failed\n";
             camlayer_rvm_close(model);
             return 1;
@@ -46,12 +46,30 @@ int main(int argc, char **argv)
     }
     camlayer_rvm_reset(model);
     if (!camlayer_rvm_segment_bgra(model, bgra.data(), 256 * 4,
-                                    alpha.data(), alpha.size())) {
+                                    alpha.data(), alpha.size(), 256)) {
         std::cerr << "RVM failed after state reset\n";
         camlayer_rvm_close(model);
         return 1;
     }
+    // Verify that model inference returns an actual higher-resolution matte.
+    // Do not upsample a 256 mask and mistake it for additional model detail.
+    for (const int side : {384, 512, 768, 1024}) {
+        std::vector<uint8_t> frame(size_t(side) * side * 4, 128);
+        std::vector<float> high_alpha(size_t(side) * side);
+        for (size_t i = 3; i < frame.size(); i += 4) frame[i] = 255;
+        if (!camlayer_rvm_segment_bgra(model, frame.data(), side * 4,
+                                        high_alpha.data(), high_alpha.size(), side)) {
+            std::cerr << "RVM native alpha inference failed at " << side << "\n";
+            camlayer_rvm_close(model);
+            return 1;
+        }
+        for (float value : high_alpha)
+            if (!std::isfinite(value) || value < 0.0f || value > 1.0f) {
+                camlayer_rvm_close(model);
+                return 1;
+            }
+    }
     camlayer_rvm_close(model);
-    std::cout << "RVM ONNX two-frame recurrence and reset: PASS\n";
+    std::cout << "RVM ONNX 256, 384, 512, 768 and 1024 recurrent inference: PASS\\n";
     return 0;
 }

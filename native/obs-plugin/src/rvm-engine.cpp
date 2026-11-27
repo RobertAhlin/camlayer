@@ -18,8 +18,7 @@
 #endif
 
 namespace {
-constexpr size_t kPixels = 256u * 256u;
-constexpr std::array<int64_t, 4> kFrameShape{1, 3, 256, 256};
+
 constexpr std::array<int64_t, 4> kEmptyStateShape{1, 1, 1, 1};
 constexpr std::array<int64_t, 1> kRatioShape{1};
 constexpr std::array<const char *, 6> kInputs{
@@ -61,6 +60,7 @@ struct camlayer_rvm_session {
     std::array<std::array<int64_t, 4>, 4> state_shapes{};
     std::vector<float> rgb;
     float ratio = 0.5f;
+    uint32_t frame_side = 256;
 
     explicit camlayer_rvm_session(const std::wstring &path)
     {
@@ -83,7 +83,7 @@ struct camlayer_rvm_session {
         auto tensor = model->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
         if (tensor.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
             throw std::runtime_error("RVM requires FP32 ONNX weights");
-        rgb.resize(kPixels * 3);
+        rgb.resize(size_t(frame_side) * frame_side * 3);
         reset();
     }
     void reset()
@@ -119,14 +119,22 @@ extern "C" void camlayer_rvm_close(camlayer_rvm_session *session)
 
 extern "C" int camlayer_rvm_segment_bgra(
     camlayer_rvm_session *session, const uint8_t *bgra,
-    uint32_t stride, float *alpha, size_t capacity)
+    uint32_t stride, float *alpha, size_t capacity, uint32_t side)
 {
-    if (!session || !bgra || !alpha || stride < 256 * 4 ||
-        capacity < kPixels) return 0;
+    if (!session || !bgra || !alpha ||
+        (side != 256 && side != 384 && side != 512 && side != 768 && side != 1024) ||
+        stride < side * 4 || capacity < size_t(side) * side) return 0;
+    if (session->frame_side != side) {
+        session->frame_side = side;
+        session->rgb.resize(size_t(side) * side * 3);
+        session->reset();
+    }
+    const size_t kPixels = size_t(side) * side;
+    const std::array<int64_t,4> frame_shape{1, 3, int64_t(side), int64_t(side)};
     try {
         for (size_t i = 0; i < kPixels; ++i) {
-            const size_t y = i / 256;
-            const size_t x = i % 256;
+            const size_t y = i / side;
+            const size_t x = i % side;
             const uint8_t *pixel = bgra + y * stride + x * 4;
             session->rgb[i] = pixel[2] * (1.0f / 255.0f);
             session->rgb[kPixels + i] = pixel[1] * (1.0f / 255.0f);
@@ -138,7 +146,7 @@ extern "C" int camlayer_rvm_segment_bgra(
             Ort::Value{nullptr}, Ort::Value{nullptr}, Ort::Value{nullptr}};
         inputs[0] = Ort::Value::CreateTensor<float>(
             session->memory, session->rgb.data(), session->rgb.size(),
-            kFrameShape.data(), kFrameShape.size());
+            frame_shape.data(), frame_shape.size());
         for (size_t i = 0; i < 4; ++i) {
             const auto &state = session->recurrent[i];
             std::array<int64_t, 4> shape = kEmptyStateShape;

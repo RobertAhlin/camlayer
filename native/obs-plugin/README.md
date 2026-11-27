@@ -1,226 +1,61 @@
-# Native CamLayer OBS Filter
+# Native CamLayer OBS Plugin
 
-**Status:** The native CamLayer filter has been tested successfully with live MediaPipe background removal in OBS 33.0.1 on both an internal HP webcam and an external Sandberg webcam. Signed softness, feathering, cleanup, stability and follow speed have been tested interactively. The new optional advanced color-aware refinement has been committed but its Windows CI result and on-device effect still need verification. RVM remains unimplemented.
+**Experimental Windows x64 OBS background-removal filter**, tested with MediaPipe and RVM on live cameras. The native plugin is the main CamLayer product; the browser demo is a separate proof of concept.
 
-This folder contains the native OBS Studio video effect plugin, applied directly to a normal **Video Capture Device** source without opening another camera connection or a Chrome window.
+## Current status (27 November 2026)
 
-## Files
+RVM MobileNetV3 FP32 ONNX is working with stateful video inference and selectable **256, 384, 512, 768 and 1024** square input/output masks. Real-device testing with a Sandberg webcam found that **512 × 512 substantially improves the contour over 256 × 256** and has tolerable lag for ordinary seated use, although Capture follow speed needs to be high. **768 and 1024 lag too far behind movement** on the tested CPU, despite looking good when stationary. These are observations, not representative FPS benchmarks.
 
-- `src/plugin-main.c`: registers a GPU video effect filter with an optional diagnostic alpha ellipse. With the diagnostic disabled, the source is passed through visually unchanged.
-- `data/locale/en-US.ini`: filter labels and notice.
-- `data/ellipse_alpha.effect`: shader drawing an alpha-masked ellipse to confirm actual OBS transparency.
-- `CMakeLists.txt`: initial libobs-based module target.
+MediaPipe remains at 256 × 256. Both engines use CPU inference through ONNX Runtime and render alpha through the OBS GPU effect. DirectML/GPU inference and live performance metrics are future work.
 
-## Intended OBS user workflow
+## Download and installation
 
-1. Add a Video Capture Device as usual.
-2. Open its **Filters** window.
-3. Add **CamLayer AI Background Removal** under **Effect Filters** or the appropriate asynchronous video filter category.
-4. Configure threshold, softness, cleanup and stability.
+The [Windows build workflow](https://github.com/RobertAhlin/camlayer/actions/workflows/build-native-windows.yml) uploads `camlayer-obs-windows-x64-bootstrap` on green runs, retained for 14 days. You may need a GitHub login to download an Actions artifact. The [verified November 27 test build](https://github.com/RobertAhlin/camlayer/actions/runs/45991937183) includes RVM resolutions through 1024.
 
-**Live MediaPipe background removal has been verified in OBS.** The optional ellipse remains as a GPU transparency diagnostic. The advanced color-aware refinement is experimental, must be explicitly enabled, and still needs on-device validation.
+1. Download and extract the ZIP from a **successful** workflow run.
+2. Close OBS.
+3. Copy the entire `camlayer-obs` folder into the OBS plugin directory, commonly `C:\\Program Files\\obs-studio\\obs-plugins\\` on standard Windows installs. Preserve `bin/64bit` and `data` subfolders.
+4. Confirm that `bin/64bit/camlayer-obs.dll` and `onnxruntime.dll` exist, alongside `data/ellipse_alpha.effect`, `data/locale/en-US.ini` and `data/models/*.onnx`.
+5. Launch OBS, add a Video Capture Device, open **Filters**, add the **CamLayer AI Background Removal** Effect Filter and enable live AI background removal. Choose RVM or MediaPipe.
 
-## Important engineering constraints
+The plugin does not need a separate Node.js/Python process or browser. Follow your organization's software installation policy. Always back up an existing working version before replacing plugin files.
 
-- OBS accepts multiple camera pixel formats. Before image segmentation, convert or access frames safely and preserve correct timing.
-- Native OBS filters need to handle source lifecycle, resolution changes and threading correctly.
-- Model selection is open: the browser MediaPipe Tasks Vision JavaScript/WASM runtime cannot simply be loaded in a C module.
-- A native-compatible runtime must be selected, with model format compatibility, licenses, CPU/GPU delegation and distribution reviewed.
-- Person segmentation output must be composited with premultiplication/straight-alpha handling appropriate for OBS.
-- Keep mask work at Balanced-like resolution initially to preserve the performance gains observed in the browser prototype.
-- The original JS implementation remains a reference for effect controls and visual quality, not direct native source code.
+## Recommended RVM first test
 
-## GitHub Actions: Windows build for beginners
+- Select **RVM**, **512 × 512** and enable live AI.
+- Start with the default alpha black/white points, then tune against your camera and lighting.
+- **Enable edge handling** is off by default. Enable it to show and apply Cleanup, Extra temporal stability, Capture follow speed, Gaussian Edge softness, Gaussian feather width and Feather bias. Settings are preserved while toggling the option.
+- If motion appears delayed, lower temporal stability; increasing Capture follow speed affects sampling and motion history but **cannot accelerate CPU model inference**.
+- Compare 256, 384 and 512 while turning your head. Use 768 and 1024 **only experimentally** with attention to mask lag.
 
-The repository has a workflow named **Build CamLayer OBS plugin (Windows)** under `.github/workflows/build-native-windows.yml`. It uses the official OBS plugin template to supply its Windows build environment.
-
-1. Open https://github.com/RobertAhlin/camlayer/actions
-2. Select **Build CamLayer OBS plugin (Windows)** from the workflows list.
-3. Select **Run workflow**, choose the `main` branch, then select **Run workflow**.
-4. Open the new run. Green means the steps succeeded; red means we must inspect the failed step and fix the source or build configuration.
-5. After a successful run, open **Artifacts** and download `camlayer-obs-windows-x64-bootstrap`.
-
-The workflow also starts automatically after changes to `native/obs-plugin/` or to the workflow file itself.
-
-**Do not install the artifact yet.** The first output is a build-test of a pass-through filter, not a functioning AI background-removal plugin. Check with IT before attempting to load unsigned or custom DLL plugins on a managed PC.
-
-A GitHub Actions workflow may require enabling Actions in repository settings if disabled. It uses GitHub-hosted Windows build machines; nothing must be installed locally to trigger a build.
-
-## Build and deployment
-
-The first pass-through Windows build was successful in GitHub Actions run #2. The GPU alpha diagnostic is a later code change: verify its new build and artifact independently before installing. Build success alone does not confirm that OBS can load the filter or render correct transparency. `find_package(libobs CONFIG REQUIRED)` needs an actual libobs CMake package path.
-
-The target user's Windows computer is IT-managed and may prohibit installation, even for a compiled ZIP plugin. Obtain approval before copying plugins to protected OBS directories. GitHub Actions can build the code remotely, but cannot override local security policies.
-
-## Next technical milestones
-
-1. Confirm the latest GPU diagnostic Windows CI build and bundled effect file.
-2. On an authorized test machine, confirm filter registration and that toggling the ellipse produces real transparency without Chroma Key.
-3. Choose and integrate a native segmentation runtime.
-4. Convert capture frames and apply the alpha mask without blocking OBS rendering.
-5. Port and benchmark mask settings, quality presets, and stabilization.
-6. Package, document, and test with multiple camera formats and OBS versions.
-
-## Continuous Edge Softness radius (November 2026)
-
-OBS testing identified visible jumps while dragging **Edge softness / feather**. The native mask processor previously used `ceil()` to snap signed dilation/erosion to integer mask-pixel radii; moving the slider past a boundary could suddenly include a whole new ring of pixels. The Gaussian feather kernel also changed its support width in steps.
-
-The processor now interpolates between the result at the lower and upper adjacent integer morphology radii, giving a continuous subpixel alpha transition as softness changes. Gaussian feathering uses fixed kernel support with smoothly changing weights. Signed inward/outward displacement, blur behavior, per-filter slider range and the separately adjustable GPU feather width remain unchanged. Extra processing can modestly increase CPU work per mask compared with the previous single-radius operation.
-
-Synthetic regression tests compare neighboring softness settings around all initial integer-radius crossings for both inward and outward directions and reject large discontinuities. **CI and real OBS feel require verification before installing**. RVM remains a separate planned backend.
-
-## RVM experimental backend (November 2026)
-
-The optional **Use advanced settings** / color-guided refinement UI has been removed after real-camera testing showed no consistent benefit and sometimes introduced a green halo. The standard mask threshold, signed softness/feather, GPU feather width, guided edge detail, cleanup, stability and follow-speed controls remain available. The unused color refinement implementation is disconnected from the runtime; it is not part of the active image pipeline.
-
-CamLayer now contains an experimental **Robust Video Matting (RVM) MobileNetV3 FP32 ONNX** backend. The AI engine dropdown selects MediaPipe or RVM. The normal **Enable live AI background removal (experimental)** option creates a worker for the selected model. Switching engines tears down the old worker and its model state before starting the new worker.
-
-The RVM worker uses the official model's six ONNX inputs (`src`, `r1i`, `r2i`, `r3i`, `r4i`, `downsample_ratio`) and its alpha output `pha`, retaining all four recurrent output tensors across frames. The recurrent state is reset after a camera-source reset or resolution change. Both engines currently receive a **256x256 BGRA capture** and share the existing mask reconstruction shader. This first RVM integration is for compatibility and quality comparison, **not yet a high-resolution RVM pipeline**. The model was designed to support high-resolution processing, which requires reworking the CamLayer capture and alpha-mask texture dimensions.
-
-The Windows workflow downloads the official RVM MobileNetV3 FP32 ONNX release model and packages it with the plugin. The RVM smoke test must complete two consecutive inference frames and a third frame after state reset; the MediaPipe smoke test remains a separate requirement. CPU performance and final cutout quality are **not yet verified on the user's Windows OBS machine**. Do not install if the latest CI build is red. The build currently records the official RVM file's SHA256; a later improvement should lock it to a reviewed digest in CI.
-
-RVM upstream: https://github.com/PeterL1n/RobustVideoMatting (GPL-3.0). Official ONNX documentation: https://github.com/PeterL1n/RobustVideoMatting/blob/master/documentation/inference.md.
-
-## Edge detail guided upscaling (experimental)
-
-The 256x256 native MediaPipe model is **not capable of producing a genuine higher-resolution segmentation mask** on its own. A broad Gaussian feather can conceal stair steps, but creates an oversized halo around hair and shoulders. The filter now includes a separate **Edge detail (guided upscaling)** control from 0 to 2. It is **off by default** to preserve the previously verified visual result until the new shader has been tested.
-
-With Edge detail enabled, the OBS GPU shader reconstructs the low-resolution mask at the output camera resolution using 3x3 neighboring alpha samples, weighted by differences in the **original full-resolution camera RGB**. Samples that cross a clear color boundary receive less weight, which can keep edges narrower than uniform feathering. Only pixels near a mask transition use the additional source RGB reads. At zero, the previous shader feather path remains unchanged.
-
-**Suggested comparison on a Logitech camera against a contrasting background:** keep threshold/cleanup/stability/follow speed constant, use signed softness 0, set GPU feather width 0.50, and compare Edge detail 0, 0.75, 1.5 and 2.0. Next compare feather 0 and 0.5 while detail 1.5. Strong detail may preserve camera noise and produce halos when foreground and background colors are similar. These are visualization heuristics, not actual RVM-quality matting. A higher-resolution model and/or a dedicated full-resolution guided matting stage remain separate future engineering tasks.
-
-The output's quality and performance must be evaluated in OBS after a successful Windows Actions build. RVM is still not integrated.
-
-## Higher quality edges and stronger advanced controls (November 2026)
-
-Early on-device Logitech webcam testing against a greenscreen exposed two problems: the 256x256 MediaPipe matte becomes visibly stair-stepped when shown at camera resolution, and the first color-aware correction was nearly invisible because it affected only semi-transparent pixels with a very small adjustment.
-
-The filter now has a separate **Edge feather width (GPU)** slider, 0 to 3, with default 1.5. This applies an adjustable 9-tap spatial reconstruction filter while rendering the 256x256 alpha texture at the camera's actual output resolution. The existing signed **Edge softness / feather** still moves and feathers the mask on the inference worker; the GPU control reduces blockiness independently, even when signed softness is 0. Higher GPU feather width can blur hair details and adds graphics workload. It smooths pixelation but **does not generate new hair detail**, since native MediaPipe inference remains limited to 256x256.
-
-The advanced color refinement now evaluates a narrow two-pixel band around actual segmentation boundaries, rather than requiring the current alpha to be already between 0.01 and 0.99. It can correct overconfident edge pixels when the sampled color strongly matches the background or a foreground reference. Color evidence must still exceed an ambiguity threshold, and deep interior/exterior pixels are unchanged. Disabled advanced mode remains a no-op. The source is copied into a reusable per-thread buffer before editing to ensure results are independent of iteration order. Existing user settings are preserved.
-
-**Testing:** Install only after a green GitHub Actions build. First disable color refinement, set signed softness near 0, then compare GPU feather width 0, 1.5, and 3 against a contrasting background. Next enable both **Use advanced settings** and the *separate* **Enable color-aware edge refinement** checkbox, choose the actual greenscreen color, set foreground tolerances conservatively (15–30%, not 97%), and compare correction strength 0 versus 75–100. The OBS native color dialog is not a video eyedropper. Strong spill of a green background into the original RGB hair pixels requires a separate color despill/decontamination algorithm; alpha refinement alone cannot remove it.
-
-## Advanced color-aware edge refinement (experimental, opt-in)
-
-The OBS effect filter now includes **Use advanced settings** below the normal controls. When unchecked (the default), the advanced controls are hidden and the existing MediaPipe pipeline is unchanged. Checking it reveals a **Color-aware edge refinement** group with its own separate **Enable color-aware edge refinement** checkbox, off by default.
-
-The advanced controls include native OBS color selectors and independent color tolerances (0–100%) for **background, hair, skin and clothing**, plus overall correction strength (0–100%). The reference colors are stored as per-filter OBS settings, allowing different external and internal camera profiles. This first implementation uses OBS's native color dialog; a true click-on-the-live-image eyedropper is *not implemented*. Color references need to be selected or entered through the dialog.
-
-The correction runs on the existing MediaPipe inference worker, after confidence thresholding, signed softness and alpha feathering. It compares a pixel's camera RGB with the reference colors using a normalized RGB distance, and adjusts alpha only at already uncertain, partially transparent edges. If foreground and background colors are equally plausible, it makes **no adjustment**. Confidently opaque and transparent pixels remain untouched. This conservative design is **not a chroma key** and cannot separate two genuinely indistinguishable colors or reconstruct missing hair details.
-
-The advanced UI and C-based color-processing module are intended to be shared with the future RVM engine once its recurrent inference backend exists. The Windows smoke test includes checks for disabled behavior, foreground/background evidence, ambiguous colors, and confident pixels. **New CI and real OBS visual verification are still required** before recommending enabling the feature on a working production OBS scene.
-
-## True alpha feathering after signed edge adjustment (experimental)
-
-Testing with the Sandberg external webcam revealed that the initial signed `Edge Softness` implementation mainly **moved the silhouette**. It did not create a visibly smooth opacity transition like a feather control.
-
-The native worker now applies a separable Gaussian blur to the **finished alpha mask after inward/outward morphology**. The signed control is unchanged: negative values contract the mask, positive values expand it, and zero leaves the original thresholded alpha untouched. Its magnitude now controls both the geometric displacement and the amount and width of feathering. The Gaussian result is blended with the signed-morphology result, retaining an identifiable edge while creating genuinely translucent boundary pixels.
-
-This processing runs on the inference worker, not the OBS graphics thread; it uses preallocated mask buffers and no per-frame heap allocations. Additional synthetic regression tests demand partial transparency at both +0.36 and -0.36, rather than accepting a merely shifted hard edge.
-
-**Limitations:** Gaussian smoothing of a 256x256 confidence mask does not reconstruct fine hair strands or prevent dark/bright background contamination at the cutout boundary. Very high softness values can lose detail, and added CPU cost may reduce mask throughput on slower systems. Model quality and actual OBS appearance remain subject to visual testing. RVM remains planned separately.
-
-## Signed softness parity and follow speed 0–5 (experimental)
-
-The browser `src/mask-processor.mjs` uses a signed morphological operation **after thresholding**, not only a shader smoothstep-width adjustment. Native CamLayer now uses the same overall approach on the inference worker: threshold the confidence mask with smoothstep and apply a separable min (negative softness contracts the foreground) or max (positive softness expands the foreground) filter at 256px mask resolution. Mask movement blends continuously from zero with a radius scaled to the model image size. The GPU shader now samples the finished alpha directly, without a second cutoff that would undo the effect. Edge softness may change outline geometry and should be used with care around hair and hands.
-
-**Edge Follow Speed now accepts 0–5:** the requested readback cadence is approximately 10 Hz at 0, 20 Hz at 1, 30 Hz at 2 and 60 Hz at 5, and motion gating accepts the full 0–5 range. These are only sampling targets. On a 30 FPS webcam or a CPU that cannot process every frame, pushing beyond 2 may increase work without increasing unique frames or reducing end-to-end delay. Preserve the working OBS version until the new Windows smoke test is green and test progressively. RVM remains a planned separate backend.
-
-The Windows smoke tests now check that positive softness expands a synthetic silhouette, negative softness shrinks it, and follow speed 5 is accepted by the temporal processing path. These tests cannot prove real-camera softness quality or latency.
-
-## Edge follow speed and capture responsiveness (experimental)
-
-User testing showed that **Edge Stability around 1.50 reduces flicker**, but moving the head leaves a similarly delayed silhouette at all stability settings. The MediaPipe prototype previously sampled the camera at only ~10 frames/second, a separate source of latency from temporal smoothing.
-
-The native filter now exposes **Edge follow speed (0–2)**, independent of Edge Stability. Higher settings reduce the historical weight specifically where mask pixels change and request more frequent 256x256 camera samples:
-
-| Edge follow speed | Target camera-sample rate |
+| RVM size | Status |
 | --- | --- |
-| 0.00 | 10 frames/s |
-| 1.00 (default) | 20 frames/s |
-| 2.00 | 30 frames/s |
+| 256 | Reference; fastest |
+| 384 | Intermediate |
+| **512** | Best quality/performance compromise in current user test |
+| 768 | Runs, but movement is too slow on tested computer |
+| 1024 | Runs, but movement is too slow on tested computer |
 
-Actual AI-mask output can be slower because GPU readback, CPU inference and OBS scheduling also take time. Increasing capture frequency may increase CPU/GPU cost. This setting does not automatically predict motion or compensate for the age of a completed mask. A bounded worker queue keeps the most recent pending image while continuing to publish successful completed masks under load rather than starving the renderer. The staged image timestamp now reflects capture time, not the later readback time.
+### What the plugin does
 
-**Suggested difficult-lighting baseline:** threshold 0.50, softness 0.44, cleanup 0.50, stability 1.50, follow speed 1.00. Test speed 1.50 and 2.00 while turning the head; if CPU load or flicker increases, step back. Verify Windows CI and OBS on-device before claiming any latency improvement. RVM remains separately planned, not implemented.
+Camera image is captured in the graphics callback at the selected mask size, copied to a one-slot asynchronous worker queue, processed with RVM recurrent ONNX inference or MediaPipe segmentation, optionally refined and uploaded as a GPU alpha mask. RVM outputs a continuous alpha matte. Its optional feather uses a Gaussian filter on the continuous matte rather than binary silhouette thresholding. A camera geometry or engine change resets appropriate state.
 
-## Working cleanup and stability controls (first refinement pass)
+## CI, packaging and source
 
-The native pipeline now implements **Edge Cleanup** and **Edge Stability** in the inference worker rather than leaving them as placeholder sliders. These controls operate on each filter instance's own mask state.
+The Windows workflow builds the plugin against the official OBS plugin template and tests the native MediaPipe model, RVM recurrent inference at **256, 384, 512, 768, 1024**, and Gaussian edge behavior. This verifies compatibility with that CI environment, not the performance or OBS integration of all possible webcams.
 
-- **Edge Cleanup, 0–1:** Reduces isolated, locally inconsistent foreground alpha at 256x256 resolution. Zero leaves the mask unchanged. This may remove small speckles and reduce some rough edges but cannot reliably separate a chair physically joined to the person's silhouette.
-- **Edge Stability, 0–2:** Uses motion-adaptive temporal smoothing. Zero has no smoothing, and higher settings blend more of the preceding mask when pixels change a little. Large changes favor the new frame to reduce trailing silhouettes.
-- The worker resets temporal state on camera loss or resolution change, and when its backend is restarted. Mask history is not shared between cameras.
-- The build includes regression tests for zero-effect controls, isolated pixel cleanup, smooth low-motion changes, and fast motion recovery.
+The compiled test artifact is available through GitHub Actions. A public [GitHub Releases](https://github.com/RobertAhlin/camlayer/releases) prerelease should be published **only after reviewing the distribution rights and license notices for both bundled models and ONNX Runtime**. See [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md).
 
-**Visual behavior is not yet validated in OBS.** Test first under the challenging low-light train conditions and compare with both sliders at zero. Overaggressive cleanup can remove hair detail; high stability can still produce ghosting. The refinement code is built as shared backend infrastructure so the future RVM implementation can use the same controls, though RVM has not been integrated.
+Source files: `src/plugin-main.c`, `src/ai-worker.cpp`, `src/ai-engine.cpp`, `src/rvm-engine.cpp`, `src/ai-mask-refine.cpp`, `src/rvm-alpha-feather.h`, `data/ellipse_alpha.effect`, `data/locale/en-US.ini`.
 
-## Experimental OBS live-mask path (first integration build)
+Current work lives on the `feature/per-engine-matting-controls` branch in [PR #1](https://github.com/RobertAhlin/camlayer/pull/1) and may not yet be in `main`.
 
-The native filter now exposes **Enable live MediaPipe background removal (experimental)**, disabled by default. When enabled and the MediaPipe backend is selected, the filter creates a source-local inference worker, captures a downscaled 256x256 BGRA view of its actual OBS filter target on the graphics thread, stages pixels for CPU inference, and uploads successful 256x256 alpha masks back to a GPU texture. The shader multiplies the source alpha by a mask whose cutoff and softness use the corresponding filter sliders.
+## Next development priorities
 
-The initial readback is deliberately throttled to approximately 10 captures per second, while rendering remains controlled by OBS. The downscaled GPU staging buffer is mapped after a later capture interval to avoid immediately reading the same image just written. This is a **first functional prototype**, not a quality/performance validated implementation: GPU readback, image orientation, edge alignment, frame latency and camera changes require on-device tests. The mask is displayed only after the first successful inference. Before that, output remains unmasked. The original ellipse test remains available and overrides the live mask when enabled.
+1. Measure actual RVM inference milliseconds, delivered mask FPS and delay relative to live video.
+2. Investigate GPU inference with DirectML for Windows.
+3. Improve real-time follow without damaging hair/edge quality.
+4. Test OBS compatibility, reliability and cross-device performance.
+5. Finish the distribution/license review and release an installable preview ZIP.
 
-MediaPipe is the only implemented live backend. RVM remains selectable but unavailable, with a shared worker interface ready for a separate recurrent-model implementation. The edge cleanup and edge stability sliders now have an initial CPU refinement implementation; visual validation is pending. Changing camera or resolution resets the visible mask to avoid using old masks with mismatched dimensions. Because model loading, CPU inference, GPU staging and source rendering can fail independently, test with a noncritical OBS scene, leave live mode disabled if problems occur, and use the OBS log entry `[CamLayer] First live MediaPipe alpha mask uploaded to GPU` to establish that a real model result reached the shader.
-
-## Shared asynchronous inference worker (development milestone)
-
-`src/ai-worker.h` and `src/ai-worker.cpp` provide a bounded, latest-frame-only background worker that can serve different AI backends. A distinct worker instance belongs to each camera/filter instance in the final integration.
-
-- **MediaPipe:** a background thread initializes the ONNX session, consumes copied 256x256 BGRA frames, and produces a timestamped 256x256 float alpha mask
-- **RVM:** the same public interface identifies the engine, but reports `UNAVAILABLE` until recurrent-state inference is implemented; no false ready status
-- Caller-side submit only copies/downsamples pixels; model inference is never performed on the caller's thread
-- New pending frames overwrite old pending frames. An obsolete inference result is discarded when a newer frame is already queued
-- A worker is shut down and joined before deletion. Camera disconnection, engine switching and model shutdown must use this lifecycle
-- The Windows smoke test exercises model initialization, frame submission, result retrieval, timestamp integrity and the unavailable RVM placeholder
-
-**Not yet connected to live OBS camera frames.** The filter still uses its existing optional model loader and verified GPU ellipse. The worker is compiled into the Windows plugin artifact and validated by a separate smoke test. Live camera capture, worker lifecycle integration in the OBS filter, safe mask texture upload and alpha rendering remain next steps. This staged approach avoids replacing the currently working on-device path before it is end-to-end validated.
-
-## Native ONNX runtime integration (experimental)
-
-The plugin now has a C ABI bridge in `src/ai-engine.h` and a C++ implementation in `src/ai-engine.cpp`. The bridge can:
-
-- Load the pinned MediaPipe Selfie Segmentation ONNX file through ONNX Runtime.
-- Convert a 640x360, 1280x720 or other BGRA image to NCHW RGB 256x256.
-- Run inference and return a 256x256 floating-point alpha mask with values in [0,1].
-- Release model resources explicitly.
-
-The **Load native MediaPipe AI runtime** checkbox opt-in initializes the model from the plugin's bundled `data/models/` directory and logs success or a detailed failure in OBS's log file. The model is not yet fed live OBS frames. RVM has only a selection placeholder.
-
-The Windows GitHub Actions build now downloads the same pinned model and ONNX Runtime binaries previously verified by the standalone native AI workflow, compiles the C++ implementation into `camlayer-obs.dll`, and places the `onnxruntime.dll` beside the OBS plugin. It includes a separate smoke-test executable exercising the same engine API with a synthetic BGRA frame, to catch integration regressions.
-
-**This is experimental infrastructure, not live AI background removal yet.** Preserve the ellipse test as the only verified alpha-rendering path until the camera-to-model-to-GPU pipeline has been tested. Enabling the loader during OBS use may cause a brief initialization pause, and must be done only in an authorized test environment.
-
-Next implementation: safely sample the actual OBS camera image, send one bounded frame at a time to a background inference worker (not the OBS graphics render thread), upload the resulting alpha mask to a GPU texture, and replace the ellipse only after successful end-to-end tests. Handle model lifecycle, camera size changes, backend switching and concurrent frames carefully.
-
-## Dual AI-engine selection scaffold
-
-The native OBS filter now exposes an **AI engine (planned)** dropdown with:
-
-- **MediaPipe (Fast, integration pending)**
-- **Robust Video Matting (Quality, integration pending)**
-
-OBS saves the selected engine with the filter settings. Switching the option currently does **not** run either model; in both cases the last verified GPU pass-through/diagnostic ellipse remains intact. This deliberate staging lets us test the dropdown without accidentally claiming working background removal.
-
-### Planned backend interface
-
-Each implementation should provide initialization, model shutdown, per-frame inference, status reporting, and a shared grayscale alpha mask. MediaPipe will process independent frames, while RVM will maintain recurrent per-stream state and reset it when the input changes, video seeks, or a new engine is selected.
-
-The GPU renderer and mask-refinement controls can then consume whichever alpha mask is active. Avoid running neural inference synchronously inside OBS's graphics rendering callback; use a bounded frame queue and well-defined frame ownership.
-
-Before shipping either backend, verify the separate model-weight redistribution conditions in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md), test CPU and GPU performance, and include all native runtime dependencies in the artifact.
-
-## First alpha diagnostic test
-
-Once the updated artifact builds successfully, and only where installing a custom OBS plugin is authorized:
-
-1. Install the package's `camlayer-obs` folder in OBS's recognized per-user plugin location, retaining its `bin/64bit` and `data` folder layout.
-2. Restart OBS, add a normal Video Capture Device and place a color/image source behind it.
-3. Add the CamLayer filter from the source's Effect Filters list.
-4. Enable **Diagnostic transparency test (ellipse)**. The outer area should become transparent, revealing the background behind the camera.
-5. Disable the toggle. The full camera should reappear.
-
-The ellipse intentionally does not follow the person. Mask threshold, softness, cleanup and stability sliders are present for future AI integration but are not operational yet in the native plugin.
-
-**Do not test by copying source C files or CMake files into OBS.** Use only a verified built artifact, and follow the device organization's IT rules.
+**Status:** A user-tested development prototype, not production-certified software.

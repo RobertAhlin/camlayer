@@ -9,10 +9,10 @@ Before making a downloadable public OBS plugin, review the upstream licenses, at
 | OBS Studio / libobs | Native filter host | OBS Studio's source is GPL-2.0-or-later; verify the exact binary and plugin linking obligations in the target build | Runtime external to CamLayer |
 | MediaPipe Tasks Vision | Browser demo | Google MediaPipe source uses Apache-2.0; individual assets need separate verification | Loaded from external hosts for browser demo |
 | Selfie Segmenter Landscape TFLite weights | Browser demo | Verify model asset terms and attribution for the specific downloadable TFLite file | Downloaded at runtime; not included in native plugin |
-| ONNX MediaPipe Selfie Segmentation candidate | CI native AI probe | Model repository lists Apache-2.0; check model card, provenance and any additional restrictions | Downloaded into GitHub Actions only |
-| ONNX Runtime 1.24.2 | CI native AI probe | Microsoft ONNX Runtime source is MIT-licensed; include required copyright and license notices if bundled | CI dependency, not yet included in OBS plugin |
-| Robust Video Matting (RVM) code | Planned optional video-matting engine | Upstream RVM repository has GPL-3.0; preserve notices and provide corresponding source where applicable | Not integrated or distributed yet |
-| RVM pretrained weights | Planned model asset | **Verify actual weight licensing, provenance and redistribution rights separately before bundling** | Not bundled |
+| ONNX MediaPipe Selfie Segmentation candidate | Native MediaPipe inference | Model repository lists Apache-2.0; check model card, provenance and any additional restrictions | Bundled in Windows Actions test artifact |
+| ONNX Runtime 1.24.2 | Native OBS plugin runtime | Microsoft ONNX Runtime uses the MIT license; include required copyright and license notices in a public package | Bundled as onnxruntime.dll in Windows Actions test artifact |
+| Robust Video Matting (RVM) code | Native RVM inference integration | Upstream RVM repository uses GPL-3.0; preserve upstream notices and provide corresponding source where required | RVM inference is implemented in the plugin |
+| RVM pretrained weights | Official MobileNetV3 FP32 ONNX model | **Verify model-weight license and redistribution rights independently of the upstream source-code GPL before publishing a release** | Downloaded, SHA256 checked and included in GitHub Actions test artifact |
 | Test portrait | CI quality fixture | Referenced from another public project with Pexels attribution; validate photo/license permissions and reproduce attribution if redistributed | CI download only; not committed to this repository |
 
 ## Open-source policy
@@ -27,3 +27,15 @@ Before making a downloadable public OBS plugin, review the upstream licenses, at
 8. The browser demo and native OBS plugin share the same project-wide GPL licensing strategy, although third-party components retain their licenses.
 
 This file is an engineering compliance inventory, not a substitute for legal review before public redistribution.
+
+## Public preview release checklist (27 November 2026)
+
+The Windows CI pipeline currently creates a **downloadable test artifact** containing `camlayer-obs.dll`, `onnxruntime.dll` and both ONNX model files. That is already a form of distribution to artifact downloaders, although artifacts expire after 14 days. Before promoting this package to a persistent, publicly advertised GitHub Release, maintainers must:
+
+1. Verify provenance, license and explicit binary redistribution rights for the pinned **RVM MobileNetV3 FP32 ONNX weights**, independently of the RVM source repository's GPL-3.0 code license.
+2. Confirm the exact MediaPipe ONNX model's license and whether attribution or additional model notices are required.
+3. Include the ONNX Runtime MIT copyright/license text, CamLayer GPL license and third-party attribution files in the published ZIP, and confirm compliance with OBS/libobs obligations.
+4. Link public release assets to corresponding source code at the exact commit/tag, and retain SHA256 verification for downloaded assets.
+5. Check whether additional redistributable binaries packaged by the OBS template have separate license requirements.
+
+A green CI build confirms technical tests, **not permission to redistribute every included component**. The publishing workflow requires a human acknowledgement of this review.
