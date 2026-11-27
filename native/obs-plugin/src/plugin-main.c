@@ -39,6 +39,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_RVM_FEATHER "rvm_gauss_v3_softness"
 #define SETTING_RVM_FEATHER_WIDTH "rvm_gauss_v3_width"
 #define SETTING_RVM_INNER "rvm_gauss_v3_inner_share"
+#define SETTING_RVM_EDGE_HANDLING "rvm_edge_handling_enabled"
 #define CAMLAYER_MASK_SIDE 256
 /* Capture rate follows the control: 10 to 30 requested frames per second. */
 
@@ -66,6 +67,7 @@ struct camlayer_filter {
     double follow_speed;
     double rvm_black, rvm_white, rvm_cleanup, rvm_stability, rvm_follow;
     double rvm_feather, rvm_feather_width, rvm_inner_share;
+    bool rvm_edge_handling;
     bool diagnostic;
     enum camlayer_ai_engine engine;
     camlayer_ai_session *ai;
@@ -120,6 +122,7 @@ static void camlayer_update(void *data, obs_data_t *settings)
     filter->rvm_feather = obs_data_get_double(settings, SETTING_RVM_FEATHER);
     filter->rvm_feather_width = obs_data_get_double(settings, SETTING_RVM_FEATHER_WIDTH);
     filter->rvm_inner_share = obs_data_get_double(settings, SETTING_RVM_INNER);
+    filter->rvm_edge_handling = obs_data_get_bool(settings, SETTING_RVM_EDGE_HANDLING);
     filter->diagnostic = obs_data_get_bool(settings, SETTING_DIAGNOSTIC);
     const enum camlayer_ai_engine selected =
         (enum camlayer_ai_engine)obs_data_get_int(settings, SETTING_AI_ENGINE);
@@ -133,15 +136,16 @@ static void camlayer_update(void *data, obs_data_t *settings)
     if (filter->worker)
         camlayer_worker_set_rvm_feather(filter->worker,
             (float)filter->rvm_black, (float)filter->rvm_white,
-            (float)filter->rvm_feather, (float)filter->rvm_feather_width,
-            (float)filter->rvm_inner_share);
+            filter->rvm_edge_handling ? (float)filter->rvm_feather : 0.0f,
+            (float)filter->rvm_feather_width,
+            filter->rvm_edge_handling ? (float)filter->rvm_inner_share : 0.5f);
     if (filter->worker)
         camlayer_worker_set_refinement(filter->worker,
             next_engine == CAMLAYER_AI_RVM ? 0.50f : (float)filter->threshold,
             next_engine == CAMLAYER_AI_RVM ? 0.0f : (float)filter->softness,
-            next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_cleanup : (float)filter->cleanup,
-            next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_stability : (float)filter->stability,
-            next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_follow : (float)filter->follow_speed);
+            next_engine == CAMLAYER_AI_RVM ? (filter->rvm_edge_handling ? (float)filter->rvm_cleanup : 0.0f) : (float)filter->cleanup,
+            next_engine == CAMLAYER_AI_RVM ? (filter->rvm_edge_handling ? (float)filter->rvm_stability : 0.0f) : (float)filter->stability,
+            next_engine == CAMLAYER_AI_RVM ? (filter->rvm_edge_handling ? (float)filter->rvm_follow : 1.0f) : (float)filter->follow_speed);
     const bool wanted_test = obs_data_get_bool(settings, SETTING_RUNTIME_TEST);
     if (filter->ai && (!wanted_test || next_engine != CAMLAYER_AI_MEDIAPIPE)) {
         camlayer_ai_close(filter->ai);
@@ -174,15 +178,16 @@ static void camlayer_update(void *data, obs_data_t *settings)
         if (filter->worker)
             camlayer_worker_set_rvm_feather(filter->worker,
                 (float)filter->rvm_black, (float)filter->rvm_white,
-                (float)filter->rvm_feather, (float)filter->rvm_feather_width,
-                (float)filter->rvm_inner_share);
+                filter->rvm_edge_handling ? (float)filter->rvm_feather : 0.0f,
+                (float)filter->rvm_feather_width,
+                filter->rvm_edge_handling ? (float)filter->rvm_inner_share : 0.5f);
         if (filter->worker)
             camlayer_worker_set_refinement(filter->worker,
                                            next_engine == CAMLAYER_AI_RVM ? 0.50f : (float)filter->threshold,
                                            next_engine == CAMLAYER_AI_RVM ? 0.0f : (float)filter->softness,
-                                           next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_cleanup : (float)filter->cleanup,
-                                           next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_stability : (float)filter->stability,
-                                           next_engine == CAMLAYER_AI_RVM ? (float)filter->rvm_follow : (float)filter->follow_speed);
+                                           next_engine == CAMLAYER_AI_RVM ? (filter->rvm_edge_handling ? (float)filter->rvm_cleanup : 0.0f) : (float)filter->cleanup,
+                                           next_engine == CAMLAYER_AI_RVM ? (filter->rvm_edge_handling ? (float)filter->rvm_stability : 0.0f) : (float)filter->stability,
+                                           next_engine == CAMLAYER_AI_RVM ? (filter->rvm_edge_handling ? (float)filter->rvm_follow : 1.0f) : (float)filter->follow_speed);
         bfree(model_path);
     }
     if (wanted_test && next_engine == CAMLAYER_AI_MEDIAPIPE && !filter->ai) {
@@ -279,6 +284,7 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_double(settings, SETTING_RVM_FEATHER, 0.0);
     obs_data_set_default_double(settings, SETTING_RVM_FEATHER_WIDTH, 4.0);
     obs_data_set_default_double(settings, SETTING_RVM_INNER, 0.50);
+    obs_data_set_default_bool(settings, SETTING_RVM_EDGE_HANDLING, false);
     obs_data_set_default_bool(settings, SETTING_DIAGNOSTIC, false);
     obs_data_set_default_int(settings, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
     obs_data_set_default_bool(settings, SETTING_RUNTIME_TEST, false);
@@ -294,14 +300,18 @@ static bool camlayer_engine_modified(obs_properties_t *props, obs_property_t *pr
     const char *media[] = {SETTING_THRESHOLD, SETTING_SOFTNESS, SETTING_FEATHER_WIDTH,
                            SETTING_EDGE_DETAIL, SETTING_CLEANUP, SETTING_STABILITY,
                            SETTING_FOLLOW_SPEED};
-    const char *rvm_props[] = {SETTING_RVM_BLACK, SETTING_RVM_WHITE, SETTING_RVM_CLEANUP,
-                               SETTING_RVM_STABILITY, SETTING_RVM_FOLLOW,
-                               SETTING_RVM_FEATHER, SETTING_RVM_FEATHER_WIDTH,
-                               SETTING_RVM_INNER};
+    const bool edge_enabled = obs_data_get_bool(settings, SETTING_RVM_EDGE_HANDLING);
+    const char *rvm_advanced[] = {SETTING_RVM_CLEANUP, SETTING_RVM_STABILITY,
+                                  SETTING_RVM_FOLLOW, SETTING_RVM_FEATHER,
+                                  SETTING_RVM_FEATHER_WIDTH, SETTING_RVM_INNER};
     for (size_t i = 0; i < sizeof(media) / sizeof(media[0]); ++i)
         obs_property_set_visible(obs_properties_get(props, media[i]), !rvm);
-    for (size_t i = 0; i < sizeof(rvm_props) / sizeof(rvm_props[0]); ++i)
-        obs_property_set_visible(obs_properties_get(props, rvm_props[i]), rvm);
+    obs_property_set_visible(obs_properties_get(props, SETTING_RVM_BLACK), rvm);
+    obs_property_set_visible(obs_properties_get(props, SETTING_RVM_WHITE), rvm);
+    obs_property_set_visible(obs_properties_get(props, SETTING_RVM_EDGE_HANDLING), rvm);
+    for (size_t i = 0; i < sizeof(rvm_advanced) / sizeof(rvm_advanced[0]); ++i)
+        obs_property_set_visible(obs_properties_get(props, rvm_advanced[i]),
+                                 rvm && edge_enabled);
     return true;
 }
 
@@ -346,6 +356,9 @@ static obs_properties_t *camlayer_properties(void *data)
                                     obs_module_text("CamLayer.RVMBlack"), 0.0, 0.9, 0.01);
     obs_properties_add_float_slider(props, SETTING_RVM_WHITE,
                                     obs_module_text("CamLayer.RVMWhite"), 0.1, 1.0, 0.01);
+    obs_property_t *edge_handling = obs_properties_add_bool(
+        props, SETTING_RVM_EDGE_HANDLING, obs_module_text("CamLayer.RVMEdgeHandling"));
+    obs_property_set_modified_callback(edge_handling, camlayer_engine_modified);
     obs_properties_add_float_slider(props, SETTING_RVM_CLEANUP,
                                     obs_module_text("CamLayer.RVMCleanup"), 0.0, 2.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_RVM_STABILITY,
@@ -419,7 +432,8 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
      * Actual mask FPS may remain below this rate on slower CPUs.
      */
     const double follow = fmax(0.0, fmin(5.0,
-        filter->engine == CAMLAYER_AI_RVM ? filter->rvm_follow : filter->follow_speed));
+        filter->engine == CAMLAYER_AI_RVM ?
+        (filter->rvm_edge_handling ? filter->rvm_follow : 1.0) : filter->follow_speed));
     // Keep requests capped at 60 Hz even when RVM follow is set above 5.
     // The camera itself may provide fewer frames (e.g. 30 FPS).
     const uint64_t capture_interval = (uint64_t)(100000000.0 / (1.0 + follow));
