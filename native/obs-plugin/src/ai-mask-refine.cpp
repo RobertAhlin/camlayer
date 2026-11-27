@@ -10,7 +10,7 @@ void MaskRefiner::reset() noexcept {
 }
 void MaskRefiner::process(float *mask, float cleanup, float stability,
                           float follow_speed, uint64_t timestamp, int mask_side) noexcept {
-    if (!mask || mask_side < 1 || mask_side > 512) return;
+    if (!mask || mask_side < 1 || mask_side > 1024) return;
     if (side != mask_side) {
         side = mask_side;
         previous.resize(size_t(side) * side);
