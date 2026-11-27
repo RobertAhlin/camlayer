@@ -9,8 +9,16 @@ void MaskRefiner::reset() noexcept {
     last_timestamp = 0;
 }
 void MaskRefiner::process(float *mask, float cleanup, float stability,
-                          float follow_speed, uint64_t timestamp) noexcept {
-    if (!mask) return;
+                          float follow_speed, uint64_t timestamp, int mask_side) noexcept {
+    if (!mask || mask_side < 1 || mask_side > 512) return;
+    if (side != mask_side) {
+        side = mask_side;
+        previous.resize(size_t(side) * side);
+        scratch.resize(size_t(side) * side);
+        morph_row.resize(size_t(side) * side);
+        alpha_buffer.resize(size_t(side) * side);
+        reset();
+    }
     // RVM can pass expanded ranges. MediaPipe's controls remain capped by
     // ai-worker.cpp. Keep smoothing bounded to avoid negative alpha weights.
     cleanup = std::clamp(cleanup, 0.0f, 2.0f);
@@ -18,16 +26,16 @@ void MaskRefiner::process(float *mask, float cleanup, float stability,
     follow_speed = std::clamp(follow_speed, 0.0f, 10.0f);
     // Preserve exact original values when cleanup is zero.
     if (cleanup > 0.0f) {
-        for (int y = 0; y < kSide; ++y) {
-            for (int x = 0; x < kSide; ++x) {
-                const int i = y * kSide + x;
+        for (int y = 0; y < side; ++y) {
+            for (int x = 0; x < side; ++x) {
+                const int i = y * side + x;
                 const float center = std::clamp(mask[i], 0.0f, 1.0f);
                 float sum = 0.0f;
                 for (int dy = -1; dy <= 1; ++dy) {
-                    const int yy = std::clamp(y + dy, 0, kSide - 1);
+                    const int yy = std::clamp(y + dy, 0, side - 1);
                     for (int dx = -1; dx <= 1; ++dx) {
-                        const int xx = std::clamp(x + dx, 0, kSide - 1);
-                        sum += std::clamp(mask[yy * kSide + xx], 0.0f, 1.0f);
+                        const int xx = std::clamp(x + dx, 0, side - 1);
+                        sum += std::clamp(mask[yy * side + xx], 0.0f, 1.0f);
                     }
                 }
                 // Only attenuate an outlying alpha value, never expand it
@@ -51,7 +59,7 @@ void MaskRefiner::process(float *mask, float cleanup, float stability,
         const float history = stability <= 2.0f
             ? 0.35f * stability
             : 0.70f + 0.20f * (1.0f - std::exp(-(stability - 2.0f)));
-        for (int i = 0; i < kPixels; ++i) {
+        for (int i = 0; i < (side * side); ++i) {
             const float current = std::clamp(mask[i], 0.0f, 1.0f);
             const float prior = previous[i];
             const float delta = std::fabs(current - prior);
@@ -63,7 +71,7 @@ void MaskRefiner::process(float *mask, float cleanup, float stability,
             mask[i] = current + history * motion_gate * (prior - current);
         }
     }
-    for (int i = 0; i < kPixels; ++i)
+    for (int i = 0; i < (side * side); ++i)
         previous[i] = std::clamp(mask[i], 0.0f, 1.0f);
     has_previous = true;
     last_timestamp = timestamp;
