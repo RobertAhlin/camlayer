@@ -46,7 +46,7 @@ int main(int argc, char **argv)
     }
     camlayer_rvm_reset(model);
     if (!camlayer_rvm_segment_bgra(model, bgra.data(), 256 * 4,
-                                    alpha.data(), alpha.size())) {
+                                    alpha.data(), alpha.size(), 256)) {
         std::cerr << "RVM failed after state reset\n";
         camlayer_rvm_close(model);
         return 1;
@@ -59,7 +59,7 @@ int main(int argc, char **argv)
         for (size_t i = 3; i < frame.size(); i += 4) frame[i] = 255;
         if (!camlayer_rvm_segment_bgra(model, frame.data(), side * 4,
                                         high_alpha.data(), high_alpha.size(), side)) {
-            std::cerr << "RVM native alpha inference failed at " << side << "\\n";
+            std::cerr << "RVM native alpha inference failed at " << side << "\n";
             camlayer_rvm_close(model);
             return 1;
         }
