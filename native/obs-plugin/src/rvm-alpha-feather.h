@@ -10,7 +10,8 @@
 namespace camlayer {
 class RvmAlphaFeather {
 public:
-
+    static constexpr int side = 256; // Reference size retained for smoke tests.
+    static constexpr int pixels = side * side;
     static constexpr int max_radius = 64;
 
     // width is in 256x256 mask pixels. Softness 0 bypasses feather entirely.
