@@ -177,7 +177,8 @@ extern "C" camlayer_worker *camlayer_worker_create(int backend, const char *mode
         return nullptr;
     if (!model_path || !*model_path ||
         (backend == CAMLAYER_BACKEND_RVM &&
-         mask_side != 256 && mask_side != 384 && mask_side != 512))
+         mask_side != 256 && mask_side != 384 && mask_side != 512 &&
+         mask_side != 768 && mask_side != 1024))
         return nullptr;
     try {
         auto *worker = new camlayer_worker(backend, model_path, mask_side);
@@ -215,7 +216,7 @@ extern "C" int camlayer_worker_submit(
         return 0;
 
     // Shrink in the submitting thread, without model inference or allocating
-    // a full-resolution frame. Work is capped to 256x256 pixels.
+    // a full-resolution frame. RVM supports up to 1024x1024 pixels.
     std::vector<uint8_t> reduced(worker->pixels * 4);
     const uint32_t side = worker->side;
     for (uint32_t y = 0; y < side; ++y) {
