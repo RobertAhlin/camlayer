@@ -164,7 +164,7 @@ int main(int argc, char **argv)
         return 1;
     }
     // Confirm the same model can run outside the caller's thread.
-    camlayer_worker *worker = camlayer_worker_create(CAMLAYER_BACKEND_MEDIAPIPE, argv[1]);
+    camlayer_worker *worker = camlayer_worker_create(CAMLAYER_BACKEND_MEDIAPIPE, argv[1], 256);
     if (!worker) return 1;
     int state = CAMLAYER_WORKER_STARTING;
     for (int i = 0; i < 200 && state == CAMLAYER_WORKER_STARTING; ++i) {
@@ -194,7 +194,7 @@ int main(int argc, char **argv)
     }
     // RVM requires a valid official model path and is tested separately
     // with recurrent inference in rvm-engine-smoke.cpp.
-    worker = camlayer_worker_create(CAMLAYER_BACKEND_RVM, nullptr);
+    worker = camlayer_worker_create(CAMLAYER_BACKEND_RVM, nullptr, 512);
     if (worker) {
         std::cerr << "Missing RVM model path must not create a worker\n";
         camlayer_worker_destroy(worker);
