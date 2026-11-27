@@ -14,7 +14,7 @@ CamLayer is an experimental native OBS Studio video filter that removes a webcam
 - [Windows build workflow](https://github.com/RobertAhlin/camlayer/actions/workflows/build-native-windows.yml)
 - [GitHub Releases](https://github.com/RobertAhlin/camlayer/releases) for future downloadable, versioned preview packages
 
-**Public releases are not published yet.** The Actions artifact is the currently available compiled test build. A manual prerelease publishing path is being prepared, subject to a review of model-weight redistribution terms and bundled third-party notices. Do not mistake a green build for an endorsement of production use.
+**Public releases are not published yet.** The Actions artifact is the currently available compiled test build. The Windows workflow now includes an **opt-in public prerelease job**, which creates an installable ZIP under GitHub Releases only when a maintainer manually runs it with both `publish_preview_release` and `redistribution_approved` selected. Do **not** select the approval checkbox until the model-weight redistribution terms and third-party notices have actually been reviewed. Once the workflow is available from the default branch, use **Actions → Build CamLayer OBS plugin (Windows) → Run workflow** and select the desired branch. Do not mistake a green build for an endorsement of production use.
 
 ### Install a test build
 
