@@ -10,7 +10,7 @@ constexpr int kSide = 256;
 constexpr int kPixels = kSide * kSide;
 
 struct MaskRefiner {
-    std::vector<float> previous{};
+    std::vector<float> previous = std::vector<float>(kPixels);
     std::array<float, kPixels> scratch{};
     std::array<float, kPixels> morph_row{};
     std::array<float, kPixels> alpha_buffer{};
