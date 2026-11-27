@@ -4,20 +4,21 @@
 #pragma once
 #include <algorithm>
 #include <array>
+#include <vector>
 #include <cmath>
 
 namespace camlayer {
 class RvmAlphaFeather {
 public:
-    static constexpr int side = 256;
-    static constexpr int pixels = side * side;
+
     static constexpr int max_radius = 64;
 
     // width is in 256x256 mask pixels. Softness 0 bypasses feather entirely.
     // Preserve fractional RVM opacity instead of thresholding a silhouette.
-    void apply(float *alpha, float softness, float width, float inner_share) noexcept
+    void apply(float *alpha, float softness, float width, float inner_share, int side = 256)
     {
-        if (!alpha || softness <= 0.001f || width <= 0.001f) return;
+        if (!alpha || side < 1 || softness <= 0.001f || width <= 0.001f) return;
+        horizontal_.resize(size_t(side) * side);
         softness = std::clamp(softness, 0.0f, 10.0f);
         width = std::clamp(width, 0.0f, 20.0f);
         inner_share = std::clamp(inner_share, 0.0f, 1.0f);
@@ -78,7 +79,7 @@ public:
     }
 
 private:
-    std::array<float, pixels> horizontal_{};
+    std::vector<float> horizontal_;
 
     static float safe_alpha(float value) noexcept
     {
