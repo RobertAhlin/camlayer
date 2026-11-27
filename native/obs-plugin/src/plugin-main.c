@@ -40,7 +40,9 @@ OBS_MODULE_USE_DEFAULT_LOCALE("camlayer-obs", "en-US")
 #define SETTING_RVM_FEATHER_WIDTH "rvm_gauss_v3_width"
 #define SETTING_RVM_INNER "rvm_gauss_v3_inner_share"
 #define SETTING_RVM_EDGE_HANDLING "rvm_edge_handling_enabled"
+#define SETTING_RVM_RESOLUTION "rvm_mask_resolution"
 #define CAMLAYER_MASK_SIDE 256
+#define CAMLAYER_MASK_MAX_SIDE 512
 /* Capture rate follows the control: 10 to 30 requested frames per second. */
 
 /* MediaPipe provides experimental live inference; RVM remains unavailable. */
@@ -68,6 +70,8 @@ struct camlayer_filter {
     double rvm_black, rvm_white, rvm_cleanup, rvm_stability, rvm_follow;
     double rvm_feather, rvm_feather_width, rvm_inner_share;
     bool rvm_edge_handling;
+    uint32_t mask_side;
+    uint32_t allocated_side;
     bool diagnostic;
     enum camlayer_ai_engine engine;
     camlayer_ai_session *ai;
@@ -91,8 +95,8 @@ struct camlayer_filter {
     uint64_t staged_timestamp;
     uint32_t captured_width;
     uint32_t captured_height;
-    float result_mask[CAMLAYER_MASK_SIDE * CAMLAYER_MASK_SIDE];
-    uint8_t mask_bytes[CAMLAYER_MASK_SIDE * CAMLAYER_MASK_SIDE];
+    float result_mask[CAMLAYER_MASK_MAX_SIDE * CAMLAYER_MASK_MAX_SIDE];
+    uint8_t mask_bytes[CAMLAYER_MASK_MAX_SIDE * CAMLAYER_MASK_MAX_SIDE];
 };
 
 static const char *camlayer_get_name(void *unused)
@@ -123,6 +127,9 @@ static void camlayer_update(void *data, obs_data_t *settings)
     filter->rvm_feather_width = obs_data_get_double(settings, SETTING_RVM_FEATHER_WIDTH);
     filter->rvm_inner_share = obs_data_get_double(settings, SETTING_RVM_INNER);
     filter->rvm_edge_handling = obs_data_get_bool(settings, SETTING_RVM_EDGE_HANDLING);
+    const int configured_side = (int)obs_data_get_int(settings, SETTING_RVM_RESOLUTION);
+    const uint32_t selected_side = configured_side == 384 || configured_side == 512
+        ? (uint32_t)configured_side : CAMLAYER_MASK_SIDE;
     filter->diagnostic = obs_data_get_bool(settings, SETTING_DIAGNOSTIC);
     const enum camlayer_ai_engine selected =
         (enum camlayer_ai_engine)obs_data_get_int(settings, SETTING_AI_ENGINE);
@@ -132,6 +139,10 @@ static void camlayer_update(void *data, obs_data_t *settings)
         blog(LOG_INFO, "[CamLayer] AI engine selection: %s",
              camlayer_engine_name(next_engine));
     }
+    const uint32_t next_side = next_engine == CAMLAYER_AI_RVM
+        ? selected_side : CAMLAYER_MASK_SIDE;
+    const bool size_changed = filter->mask_side && filter->mask_side != next_side;
+    filter->mask_side = next_side;
     filter->engine = next_engine;
     if (filter->worker)
         camlayer_worker_set_rvm_feather(filter->worker,
@@ -153,7 +164,7 @@ static void camlayer_update(void *data, obs_data_t *settings)
     }
     filter->runtime_test = wanted_test;
     const bool live_ai = obs_data_get_bool(settings, SETTING_LIVE_AI);
-    if (filter->worker && (!live_ai || next_engine != filter->worker_engine ||
+    if (filter->worker && (!live_ai || size_changed || next_engine != filter->worker_engine ||
                            filter->live_ai != live_ai)) {
         camlayer_worker_destroy(filter->worker);
         filter->worker = NULL;
@@ -167,7 +178,8 @@ static void camlayer_update(void *data, obs_data_t *settings)
             ? "models/rvm_mobilenetv3_fp32.onnx"
             : "models/selfie_segmentation.onnx");
         filter->worker = camlayer_worker_create(use_rvm
-            ? CAMLAYER_BACKEND_RVM : CAMLAYER_BACKEND_MEDIAPIPE, model_path);
+            ? CAMLAYER_BACKEND_RVM : CAMLAYER_BACKEND_MEDIAPIPE, model_path,
+            filter->mask_side);
         if (filter->worker) {
             filter->worker_engine = next_engine;
             blog(LOG_INFO, "[CamLayer] Live %s inference worker starting",
@@ -285,6 +297,7 @@ static void camlayer_defaults(obs_data_t *settings)
     obs_data_set_default_double(settings, SETTING_RVM_FEATHER_WIDTH, 4.0);
     obs_data_set_default_double(settings, SETTING_RVM_INNER, 0.50);
     obs_data_set_default_bool(settings, SETTING_RVM_EDGE_HANDLING, false);
+    obs_data_set_default_int(settings, SETTING_RVM_RESOLUTION, 256);
     obs_data_set_default_bool(settings, SETTING_DIAGNOSTIC, false);
     obs_data_set_default_int(settings, SETTING_AI_ENGINE, CAMLAYER_AI_MEDIAPIPE);
     obs_data_set_default_bool(settings, SETTING_RUNTIME_TEST, false);
@@ -309,6 +322,7 @@ static bool camlayer_engine_modified(obs_properties_t *props, obs_property_t *pr
     obs_property_set_visible(obs_properties_get(props, SETTING_RVM_BLACK), rvm);
     obs_property_set_visible(obs_properties_get(props, SETTING_RVM_WHITE), rvm);
     obs_property_set_visible(obs_properties_get(props, SETTING_RVM_EDGE_HANDLING), rvm);
+    obs_property_set_visible(obs_properties_get(props, SETTING_RVM_RESOLUTION), rvm);
     for (size_t i = 0; i < sizeof(rvm_advanced) / sizeof(rvm_advanced[0]); ++i)
         obs_property_set_visible(obs_properties_get(props, rvm_advanced[i]),
                                  rvm && edge_enabled);
@@ -352,6 +366,12 @@ static obs_properties_t *camlayer_properties(void *data)
                                     obs_module_text("CamLayer.Stability"), 0.0, 2.0, 0.05);
     obs_properties_add_float_slider(props, SETTING_FOLLOW_SPEED,
                                     obs_module_text("CamLayer.FollowSpeed"), 0.0, 5.0, 0.05);
+    obs_property_t *resolution = obs_properties_add_list(
+        props, SETTING_RVM_RESOLUTION, obs_module_text("CamLayer.RVMResolution"),
+        OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+    obs_property_list_add_int(resolution, "256 x 256 (reference)", 256);
+    obs_property_list_add_int(resolution, "384 x 384 (balanced)", 384);
+    obs_property_list_add_int(resolution, "512 x 512 (quality test)", 512);
     obs_properties_add_float_slider(props, SETTING_RVM_BLACK,
                                     obs_module_text("CamLayer.RVMBlack"), 0.0, 0.9, 0.01);
     obs_properties_add_float_slider(props, SETTING_RVM_WHITE,
@@ -421,9 +441,20 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
     }
     if (!filter->capture)
         filter->capture = gs_texrender_create(GS_BGRA, GS_ZS_NONE);
+    if (filter->allocated_side != filter->mask_side) {
+        gs_stagesurface_destroy(filter->staging);
+        filter->staging = NULL;
+        gs_texrender_destroy(filter->capture);
+        filter->capture = NULL;
+        gs_texture_destroy(filter->mask_texture);
+        filter->mask_texture = NULL;
+        filter->allocated_side = filter->mask_side;
+        filter->staging_ready = false;
+        filter->mask_ready = false;
+    }
     if (!filter->staging)
-        filter->staging = gs_stagesurface_create(CAMLAYER_MASK_SIDE,
-                                                 CAMLAYER_MASK_SIDE, GS_BGRA);
+        filter->staging = gs_stagesurface_create(filter->mask_side,
+                                                 filter->mask_side, GS_BGRA);
     if (!filter->capture || !filter->staging)
         return;
 
@@ -445,8 +476,8 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
         uint8_t *pixels = NULL;
         uint32_t stride = 0;
         if (gs_stagesurface_map(filter->staging, &pixels, &stride)) {
-            camlayer_worker_submit(filter->worker, pixels, CAMLAYER_MASK_SIDE,
-                                    CAMLAYER_MASK_SIDE, stride,
+            camlayer_worker_submit(filter->worker, pixels, filter->mask_side,
+                                    filter->mask_side, stride,
                                     filter->staged_timestamp);
             gs_stagesurface_unmap(filter->staging);
         }
@@ -456,8 +487,8 @@ static void camlayer_sample_camera(struct camlayer_filter *filter)
     gs_texrender_reset(filter->capture);
     gs_blend_state_push();
     gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
-    if (gs_texrender_begin(filter->capture, CAMLAYER_MASK_SIDE,
-                            CAMLAYER_MASK_SIDE)) {
+    if (gs_texrender_begin(filter->capture, filter->mask_side,
+                            filter->mask_side)) {
         struct vec4 transparent = {0};
         gs_clear(GS_CLEAR_COLOR, &transparent, 0.0f, 0);
         gs_ortho(0.0f, (float)width, 0.0f, (float)height, -100.0f, 100.0f);
@@ -479,10 +510,10 @@ static void camlayer_publish_mask(struct camlayer_filter *filter)
         return;
     uint64_t timestamp = 0;
     if (!camlayer_worker_take_mask(filter->worker, filter->result_mask,
-                                   CAMLAYER_MASK_SIDE * CAMLAYER_MASK_SIDE,
+                                   (size_t)filter->mask_side * filter->mask_side,
                                    &timestamp))
         return;
-    for (size_t i = 0; i < CAMLAYER_MASK_SIDE * CAMLAYER_MASK_SIDE; i++) {
+    for (size_t i = 0; i < (size_t)filter->mask_side * filter->mask_side; i++) {
         float v = filter->result_mask[i];
         if (!isfinite(v)) v = 0.0f;
         if (v < 0.0f) v = 0.0f;
@@ -491,11 +522,11 @@ static void camlayer_publish_mask(struct camlayer_filter *filter)
     }
     if (!filter->mask_texture) {
         filter->mask_texture = gs_texture_create(
-            CAMLAYER_MASK_SIDE, CAMLAYER_MASK_SIDE, GS_R8, 1, NULL, GS_DYNAMIC);
+            filter->mask_side, filter->mask_side, GS_R8, 1, NULL, GS_DYNAMIC);
     }
     if (filter->mask_texture) {
         gs_texture_set_image(filter->mask_texture, filter->mask_bytes,
-                             CAMLAYER_MASK_SIDE, false);
+                             filter->mask_side, false);
         if (!filter->mask_ready)
             blog(LOG_INFO, "[CamLayer] First live %s alpha mask uploaded to GPU", camlayer_engine_name(filter->engine));
         filter->mask_ready = true;
