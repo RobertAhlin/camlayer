@@ -43,8 +43,8 @@ void camlayer_worker_set_refinement(camlayer_worker *worker, float threshold,
                                     float softness, float cleanup,
                                     float stability, float follow_speed);
 /* RVM-only controls, sampled along with each frame in the worker thread.
- * Feather width uses 256x256 mask pixels, not output-resolution pixels.
- * Alpha is remapped before signed-distance feathering.
+ * Feather width uses selected RVM mask pixels, not OBS output pixels.
+ * Alpha is remapped before Gaussian feathering.
  */
 void camlayer_worker_set_rvm_feather(camlayer_worker *worker, float black,
                                      float white, float softness, float width,
